@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 import torch
 
-from ..config import BodyModelConfig, FittingConfig
+from mesh2smplx.core.config import BodyModelConfig, FittingConfig
 from .joints import JointMapper, smpl_to_openpose
 from .losses import (
     body_pose_prior,

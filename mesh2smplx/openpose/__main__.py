@@ -2,18 +2,18 @@
 
 Examples:
     # Single image, JSON only
-    python -m tools.openpose135 --image foo.jpg --write_json out/
+    python -m mesh2smplx.openpose --image foo.jpg --write_json out/
 
     # Folder of images, JSON + overlays
-    python -m tools.openpose135 --image_dir rgb/ \\
+    python -m mesh2smplx.openpose --image_dir rgb/ \\
         --write_json keypoints/ --write_images overlays/
 
     # Video → per-frame JSON + composited overlay video
-    python -m tools.openpose135 --video clip.mp4 \\
+    python -m mesh2smplx.openpose --video clip.mp4 \\
         --write_json keypoints/ --write_video overlay.mp4
 
     # Skip face + cap to 1 person
-    python -m tools.openpose135 --image_dir rgb/ --write_json kp/ \\
+    python -m mesh2smplx.openpose --image_dir rgb/ --write_json kp/ \\
         --no_face --number_people_max 1
 
 Outputs follow the CMU OpenPose layout. JSON files are named

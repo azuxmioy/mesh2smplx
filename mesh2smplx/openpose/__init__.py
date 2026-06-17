@@ -12,7 +12,7 @@ __all__ = ["OpenPose135Detector", "write_openpose_json"]
 
 def __getattr__(name):
     # Lazy-load detector.py (which pulls cv2/torch) so utility scripts like
-    # `python -m tools.openpose135._fetch_weights` don't require the full
+    # `python -m mesh2smplx.openpose._fetch_weights` does not require the full
     # inference stack to be importable.
     if name in __all__:
         from . import detector

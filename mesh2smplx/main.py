@@ -1,17 +1,17 @@
-"""Command line entry points for SMPL registration."""
+"""Command line entry point for mesh-to-SMPL-X fitting."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-from .config import load_config
-from .frame_selection import parse_frame_range
-from .pipeline import Pipeline
+from .core.config import load_config
+from .core.frame_selection import parse_frame_range
+from .core.pipeline import Pipeline
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="smpl-register")
+    parser = argparse.ArgumentParser(prog="mesh2smplx")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="Run the registration pipeline.")
@@ -183,7 +183,7 @@ def fit_full_command(args: argparse.Namespace) -> None:
     import numpy as np
     import torch
 
-    from .data.mesh_sequence import discover_mesh_sequence
+    from .core.data.mesh_sequence import discover_mesh_sequence
     from .fitting import SmplFitter
     from .fitting.mesh_losses import load_mesh_target
 

@@ -94,7 +94,7 @@ class AitviewerRemoteFitStreamer:
         command = [
             sys.executable,
             "-m",
-            "smpl_registration.visualization.aitviewer_camera_scene",
+            "mesh2smplx.visualization.aitviewer_camera_scene",
             "--camera-json",
             str(overlay.camera_json),
             "--image-root",

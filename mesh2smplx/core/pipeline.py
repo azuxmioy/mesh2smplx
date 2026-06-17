@@ -47,8 +47,8 @@ class Pipeline:
     def run(self) -> None:
         import numpy as np
 
-        from .keypoints.openpose_format import load_frame_keypoints
-        from .keypoints.providers import build_keypoint_provider
+        from mesh2smplx.openpose.format import load_frame_keypoints
+        from mesh2smplx.openpose.providers import build_keypoint_provider
         from .triangulation import triangulate_frame
 
         frames = parse_frame_range(self.config.fitting.frames)
@@ -96,5 +96,5 @@ class Pipeline:
         print(f"wrote={keypoints_path}")
         print(
             "Next step: fit with "
-            f"`smpl-register fit-full --config <config> --keypoints3d {keypoints_path}`"
+            f"`mesh2smplx fit-full --config <config> --keypoints3d {keypoints_path}`"
         )

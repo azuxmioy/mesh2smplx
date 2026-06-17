@@ -1,6 +1,6 @@
 """High-level runners for the OpenPose-135 detector.
 
-The CLI (`scripts/openpose135.py`) and any UI wrappers should call into these
+The OpenPose CLI and any UI wrappers should call into these
 helpers rather than open-coding the per-frame loop. Inputs are decoded with
 PIL / cv2 and outputs are written as we go (constant memory, video-safe).
 """

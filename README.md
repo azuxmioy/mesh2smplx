@@ -1,38 +1,35 @@
-# SMPL Registration
+# mesh2smplx
 
-Source-only SMPL/SMPL-H/SMPL-X fitting from public data interfaces. The main
-starter path fits a body model to a textured mesh sequence plus precomputed 3D
-keypoints, with optional mesh alignment and AITviewer visualization.
-
-This repository does not include SMPL-family model files, OpenPose weights,
-datasets, generated outputs, or environment-specific configs.
+Fit SMPL, SMPL-H, or SMPL-X bodies to textured mesh sequences and precomputed
+3D keypoints. The repository is source-only: it does not include SMPL-family
+model files, OpenPose weights, datasets, generated outputs, or local machine
+configs.
 
 ## Folder Layout
 
 ```text
-registration_oss_draft/
-  README.md
-  pyproject.toml
-  docs/
-    data_format.md
-  examples/
-    configs/textured_mesh.yaml
-  scripts/
-    run_starter.sh
-  src/smpl_registration/
-  tests/
+mesh2smplx/
+  main.py                  Repository-root entry point
+  configs/                 One public starter config
+  scripts/                 Convenience launch and visualization scripts
+  mesh2smplx/
+    main.py                Package entry point
+    core/                  Config, data loading, rendering plan, triangulation
+    fitting/               SMPL/SMPL-H/SMPL-X fitting losses and schedules
+    openpose/              Self-contained OpenPose-135 migration and JSON format
+    visualization/         Optional AITviewer integration
 ```
 
 ## Install
 
-Create an environment from the package folder:
+Create an environment from the repository root:
 
 ```bash
-cd registration_oss_draft
+cd mesh2smplx
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python -m pip install -e .
 ```
 
 For CUDA runs, install the PyTorch wheel that matches your driver and CUDA
@@ -40,12 +37,12 @@ version before installing the package. Optional extras:
 
 ```bash
 python -m pip install -e ".[viewer]"      # AITviewer support
-python -m pip install -e ".[openpose135]" # optional OpenPose-135 wrapper
+python -m pip install -e ".[openpose]"    # optional OpenPose-135 wrapper
 ```
 
 ## Prepare Data
 
-Prepare a mesh sequence and a 3D-keypoint file:
+Prepare one mesh per frame. OBJ is the main tested format.
 
 ```text
 my_sequence/
@@ -58,14 +55,30 @@ my_sequence/
   keypoints_3d.npy
 ```
 
-`keypoints_3d.npy` should have shape `(num_frames, num_joints, 5)`, with XYZ in
-the same units as the meshes and confidence in the last column. Set
-`input.scale_to_meters` in the config to convert those units for fitting.
+Textures are optional when the mesh material already points to an image or when
+you are fitting from precomputed 3D keypoints only.
+
+`keypoints_3d.npy` should have shape:
+
+```text
+(num_frames, num_joints, 5)
+```
+
+The first three values are XYZ in the same unit system as the mesh before
+`scale_to_meters` is applied. The last value is confidence. The fourth value is
+kept for compatibility with triangulation outputs.
+
+The default joint order is OpenPose-135:
+
+```text
+BODY_25 + left hand + right hand + face inner + face contour
+```
+
+If you use a different detector or joint set, update the joint mapping in
+`mesh2smplx/fitting/joints.py`.
 
 Download SMPL, SMPL-H, or SMPL-X model files from the official providers and
 store them outside this repository, for example `/path/to/body_models`.
-
-More detail is in [docs/data_format.md](docs/data_format.md).
 
 ## Configure
 
@@ -73,7 +86,7 @@ Copy the starter config into an ignored local config folder:
 
 ```bash
 mkdir -p local_configs
-cp examples/configs/textured_mesh.yaml local_configs/my_sequence.yaml
+cp configs/textured_mesh.yaml local_configs/my_sequence.yaml
 ```
 
 Update at least these fields:
@@ -115,13 +128,13 @@ as `0`, `0,5,10`, or `0-30`.
 The starter script first runs:
 
 ```bash
-python -m smpl_registration inspect --config local_configs/my_sequence.yaml
+python -m mesh2smplx inspect --config local_configs/my_sequence.yaml
 ```
 
 Then it launches:
 
 ```bash
-python -m smpl_registration fit-full \
+python -m mesh2smplx fit-full \
   --config local_configs/my_sequence.yaml \
   --keypoints3d /path/to/my_sequence/keypoints_3d.npy \
   --frame-indices 0
@@ -134,18 +147,24 @@ By default the starter script caps optimizer work with
 MAX_STEPS_PER_STAGE= scripts/run_starter.sh local_configs/my_sequence.yaml /path/to/keypoints_3d.npy 0-30
 ```
 
+You can also call the root entry point directly:
+
+```bash
+python main.py inspect --config local_configs/my_sequence.yaml
+```
+
 ## Useful Commands
 
 Inspect mesh discovery without fitting:
 
 ```bash
-python -m smpl_registration inspect --config local_configs/my_sequence.yaml
+python -m mesh2smplx inspect --config local_configs/my_sequence.yaml
 ```
 
 Run the mesh and keypoint fitting command directly:
 
 ```bash
-python -m smpl_registration fit-full \
+python -m mesh2smplx fit-full \
   --config local_configs/my_sequence.yaml \
   --keypoints3d /path/to/keypoints_3d.npy \
   --frame-indices 0-10 \
@@ -155,12 +174,28 @@ python -m smpl_registration fit-full \
 Open saved outputs in AITviewer:
 
 ```bash
-python -m smpl_registration view \
+python -m mesh2smplx view \
   --config local_configs/my_sequence.yaml \
   --outputs outputs/my_sequence/fit_full
 ```
 
-## Release Notes
+Run the optional OpenPose-135 wrapper directly:
+
+```bash
+python -m mesh2smplx.openpose --help
+mesh2smplx-openpose --help
+```
+
+## Licensing And External Assets
+
+The original code and documentation in this repository are marked as
+CC-BY-NC-4.0. This does not grant rights to third-party assets or upstream code
+with separate license terms.
+
+Users must download SMPL-family models from the official providers and accept
+their licenses. OpenPose model weights are not shipped with this repository.
+If code is derived from MPI/SMPLify-X fitting components, keep the upstream
+non-commercial research license terms and attribution intact.
 
 Keep these out of the public repository:
 

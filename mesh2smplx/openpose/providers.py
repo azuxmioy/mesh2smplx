@@ -6,9 +6,9 @@ import os
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..config import KeypointConfig
-from ..data.interfaces import ObservationBundle
-from .openpose_format import keypoint_json_path
+from mesh2smplx.core.config import KeypointConfig
+from mesh2smplx.core.data.interfaces import ObservationBundle
+from .format import keypoint_json_path
 
 
 class KeypointProvider(Protocol):
@@ -59,7 +59,7 @@ class OpenPose135Keypoints:
 
         <keypoints.output_dir>/<camera_id>/<frame_id:06d>_keypoints.json
 
-    which is exactly the layout :func:`openpose_format.load_frame_keypoints`
+    which is exactly the layout :func:`format.load_frame_keypoints`
     reads back for triangulation. The CMU OpenPose model weights are
     non-commercial; they are downloaded at runtime (HF mirror / local cache),
     never shipped with the package.
@@ -68,8 +68,8 @@ class OpenPose135Keypoints:
     config: KeypointConfig
 
     def _build_detector(self):
-        from .openpose135 import OpenPose135Detector
-        from .openpose135.weights import resolve_weights
+        from . import OpenPose135Detector
+        from .weights import resolve_weights
 
         kinds = ["body25"]
         if self.config.enable_hand:
@@ -94,7 +94,7 @@ class OpenPose135Keypoints:
         if self.config.output_dir is None:
             raise ValueError("openpose135 keypoints require keypoints.output_dir")
 
-        from .openpose135.runtime import process_image
+        from .runtime import process_image
 
         output_dir = self.config.output_dir
         render_pose = 2 if self.config.render_overlays else 0

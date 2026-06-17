@@ -7,7 +7,7 @@ original ``phd.utils.image.load_openpose_json`` contract:
 
 i.e. 135 ``(x, y, confidence)`` rows. This module is dependency-light (numpy +
 json only) so it stays inside the core package; the actual detector lives in the
-optional vendored :mod:`smpl_registration.keypoints.openpose135` subpackage.
+optional vendored :mod:`mesh2smplx.openpose` package.
 """
 
 from __future__ import annotations

@@ -23,7 +23,6 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || "$#" -lt 2 ]]; then
   exit 0
 fi
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON:-python}"
 CONFIG="$1"
 KEYPOINTS3D="$2"
@@ -32,13 +31,11 @@ MAX_STEPS_PER_STAGE="${MAX_STEPS_PER_STAGE-5}"
 SCAN_SURFACE_SAMPLES="${SCAN_SURFACE_SAMPLES:-2000}"
 BODY_VERTEX_SAMPLES="${BODY_VERTEX_SAMPLES:-2000}"
 
-export PYTHONPATH="${PROJECT_ROOT}/src:${PYTHONPATH:-}"
-
 echo "Inspecting mesh sequence..."
-"${PYTHON_BIN}" -m smpl_registration inspect --config "${CONFIG}"
+"${PYTHON_BIN}" -m mesh2smplx inspect --config "${CONFIG}"
 
 FIT_ARGS=(
-  -m smpl_registration fit-full
+  -m mesh2smplx fit-full
   --config "${CONFIG}"
   --keypoints3d "${KEYPOINTS3D}"
   --frame-indices "${FRAME_INDICES}"

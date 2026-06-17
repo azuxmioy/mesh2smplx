@@ -3,11 +3,12 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "smpl-registration"
+name = "mesh2smplx"
 version = "0.0.0"
-description = "Multi-view and mesh-aware SMPL/SMPL-X registration."
+description = "Mesh-aware SMPL/SMPL-X fitting from textured mesh sequences."
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "CC-BY-NC-4.0" }
 authors = [
   { name = "SMPL Registration Contributors" }
 ]
@@ -35,24 +36,22 @@ viewer = [
   # older Torch wheels used for local debugging may still need NumPy 1.x.
   "opencv-contrib-python-headless<4.12"
 ]
-openpose135 = [
+openpose = [
   "huggingface-hub>=0.23",
   "scipy>=1.10"
 ]
 dev = [
-  "pytest>=8",
   "ruff>=0.5"
 ]
 
 [project.scripts]
-smpl-register = "smpl_registration.cli:main"
+mesh2smplx = "mesh2smplx.main:main"
+mesh2smplx-openpose = "mesh2smplx.openpose.__main__:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["mesh2smplx*"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..config import PipelineConfig
+from mesh2smplx.core.config import PipelineConfig
 
 
 def require_aitviewer():

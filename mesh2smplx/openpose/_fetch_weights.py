@@ -1,7 +1,7 @@
 """Fetch the three OpenPose-135 .pth weight files into a local cache directory.
 
 Usage:
-    python -m tools.openpose135._fetch_weights --out ./openpose135_pth
+    python -m mesh2smplx.openpose._fetch_weights --out ./openpose135_pth
 
 Steps:
 1. hand_pose_model.pth, facenet.pth -> hf_hub_download from lllyasviel/Annotators (always)
