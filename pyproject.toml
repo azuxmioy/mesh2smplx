@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smpl-registration"
+version = "0.0.0"
+description = "Multi-view and mesh-aware SMPL/SMPL-X registration."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "SMPL Registration Contributors" }
+]
+dependencies = [
+  # Keep Torch broadly pinned so users can install the wheel matching their CUDA
+  # or CPU environment. NumPy is capped because older Torch wheels can fail to
+  # initialize NumPy 2.x.
+  "numpy>=1.23,<2",
+  "opencv-python>=4.8",
+  "Pillow>=10",
+  "PyYAML>=6",
+  "torch>=2.1",
+  "tqdm>=4.66",
+  "trimesh>=4",
+  "smplx>=0.1.28"
+]
+
+[project.optional-dependencies]
+render = [
+  "kaolin"
+]
+viewer = [
+  "aitviewer",
+  # Newer OpenCV headless wheels on some platforms require NumPy 2.x, while
+  # older Torch wheels used for local debugging may still need NumPy 1.x.
+  "opencv-contrib-python-headless<4.12"
+]
+openpose135 = [
+  "huggingface-hub>=0.23",
+  "scipy>=1.10"
+]
+dev = [
+  "pytest>=8",
+  "ruff>=0.5"
+]
+
+[project.scripts]
+smpl-register = "smpl_registration.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

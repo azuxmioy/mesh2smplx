@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local environments
+.venv/
+venv/
+env/
+
+# Generated capture outputs
+/outputs/
+/local_configs/
+/images/
+/crop_images/
+/masks/
+/bbox/
+/openpose_keypoints/
+/keypoints_3d/
+/smplx/
+/aligned_meshes/
+
+# Restricted or large assets
+/SMPL/
+/body_models/
+/models/
+*.pkl
+*.npz
+*.caffemodel
+*.pth
+*.pt
+*.onnx
+*.zip
+
+# Native build products
+*.so
+*.dylib
+*.dll
+
+# OS/editor
+.DS_Store
+.idea/
+imgui.ini
