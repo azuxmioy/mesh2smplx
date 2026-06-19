@@ -1,4 +1,1 @@
-from .aitviewer import open_viewer
-
-__all__ = ["open_viewer"]
-
+"""Visualization helpers for live fitting and camera-aware AITviewer scenes."""

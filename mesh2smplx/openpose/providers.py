@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -22,7 +21,7 @@ class PrecomputedKeypoints:
 
     def run(self, observations: ObservationBundle) -> None:
         if self.config.path is None:
-            raise ValueError("precomputed keypoints require keypoints.path")
+            raise ValueError("precomputed keypoints require input.keypoints_2d or keypoints.path")
         if not self.config.path.exists():
             raise FileNotFoundError(self.config.path)
 
@@ -38,6 +37,34 @@ class ExternalCommandKeypoints:
             "external_command keypoint execution is not wired yet. Run your detector "
             "separately and use provider: precomputed."
         )
+
+
+@dataclass
+class AutoKeypoints:
+    config: KeypointConfig
+
+    def run(self, observations: ObservationBundle) -> None:
+        if (
+            self.config.path is not None
+            and not self.config.overwrite
+            and _all_keypoint_jsons_exist(self.config.path, observations)
+        ):
+            PrecomputedKeypoints(self.config).run(observations)
+            return
+        OpenPose135Keypoints(self.config).run(observations)
+
+
+def _all_keypoint_jsons_exist(root, observations: ObservationBundle) -> bool:
+    from .format import keypoint_json_path
+
+    root = root
+    if root is None or not root.exists():
+        return False
+    for frame in observations.frames:
+        for camera_id in frame.image_paths:
+            if not keypoint_json_path(root, camera_id, frame.frame_id).exists():
+                return False
+    return True
 
 
 def _resolve_device(spec: str | None) -> str:
@@ -57,7 +84,7 @@ class OpenPose135Keypoints:
 
     Writes one CMU OpenPose JSON per camera and frame to::
 
-        <keypoints.output_dir>/<camera_id>/<frame_id:06d>_keypoints.json
+        <input.keypoints_2d>/<camera_id>/<frame_id:06d>_keypoints.json
 
     which is exactly the layout :func:`format.load_frame_keypoints`
     reads back for triangulation. The CMU OpenPose model weights are
@@ -77,10 +104,9 @@ class OpenPose135Keypoints:
         if self.config.enable_face:
             kinds.append("face")
 
-        cache_dir = self.config.weights_dir or os.environ.get("OPENPOSE135_CACHE_DIR")
         weight_paths = resolve_weights(
             repo_id=self.config.hf_repo,
-            cache_dir=str(cache_dir) if cache_dir else None,
+            cache_dir=str(self.config.weights_dir) if self.config.weights_dir else None,
             kinds=kinds,
         )
         return OpenPose135Detector(
@@ -92,16 +118,29 @@ class OpenPose135Keypoints:
 
     def run(self, observations: ObservationBundle) -> None:
         if self.config.output_dir is None:
-            raise ValueError("openpose135 keypoints require keypoints.output_dir")
+            raise ValueError(
+                "openpose135 keypoints require input.keypoints_2d or keypoints.output_dir"
+            )
 
         from .runtime import process_image
 
         output_dir = self.config.output_dir
         render_pose = 2 if self.config.render_overlays else 0
         detector = self._build_detector()
+        print(
+            "openpose135 "
+            f"device={detector.device} "
+            f"crop_to_mask={self.config.crop_to_mask} "
+            f"max_input_size={self.config.max_input_size}"
+        )
 
         for frame in observations.frames:
             for camera_id, image_path in frame.image_paths.items():
+                mask_path = (
+                    frame.mask_paths.get(camera_id)
+                    if frame.mask_paths is not None
+                    else None
+                )
                 json_path = keypoint_json_path(output_dir, camera_id, frame.frame_id)
                 overlay_path = (
                     json_path.with_name(f"{frame.frame_id:06d}_overlay.png")
@@ -123,10 +162,19 @@ class OpenPose135Keypoints:
                     write_image=overlay_path,
                     render_pose=render_pose,
                     number_people_max=self.config.number_people_max,
+                    mask_path=mask_path,
+                    crop_to_mask=self.config.crop_to_mask,
+                    crop_padding=self.config.crop_padding,
+                    crop_padding_pixels=self.config.crop_padding_pixels,
+                    crop_aspect_height=self.config.crop_aspect_height,
+                    crop_aspect_width=self.config.crop_aspect_width,
+                    max_input_size=self.config.max_input_size,
                 )
 
 
 def build_keypoint_provider(config: KeypointConfig) -> KeypointProvider:
+    if config.provider == "auto":
+        return AutoKeypoints(config)
     if config.provider == "precomputed":
         return PrecomputedKeypoints(config)
     if config.provider == "external_command":

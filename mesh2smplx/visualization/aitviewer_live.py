@@ -5,8 +5,10 @@ from __future__ import annotations
 import subprocess
 import sys
 import asyncio
+import socket
+import time
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,8 @@ import numpy as np
 from ..fitting.smpl_fitter import SmplFitProgress
 from .aitviewer_camera_scene import (
     CameraImageOverlayConfig,
+    InitialCameraConfig,
+    ViewerRenderConfig,
     format_camera_ids,
     format_frame_ids,
 )
@@ -45,14 +49,16 @@ class AitviewerRemoteFitStreamer:
     server_log_path: Path | None = None
     source_meshes: list[tuple[np.ndarray, np.ndarray]] | None = None
     camera_overlay: CameraImageOverlayConfig | None = None
+    initial_camera: InitialCameraConfig | None = None
+    render_config: ViewerRenderConfig = field(default_factory=ViewerRenderConfig)
 
     def __post_init__(self) -> None:
         try:
             from aitviewer.remote.viewer import RemoteViewer
         except ImportError as exc:
             raise RuntimeError(
-                "Live visualization requires AITviewer. Install the viewer extra "
-                "or run `.venv/bin/python -m pip install aitviewer`."
+                "Live visualization requires AITviewer. Install it with "
+                "`python -m pip install -r requirements.txt` from the repository root."
             ) from exc
 
         self._log_handle = None
@@ -60,13 +66,14 @@ class AitviewerRemoteFitStreamer:
         if self.launch:
             if self.server_log_path is not None:
                 self.server_log_path.parent.mkdir(parents=True, exist_ok=True)
-                self._log_handle = self.server_log_path.open("a", encoding="utf-8")
+                self._log_handle = self.server_log_path.open("w", encoding="utf-8")
             self._process = subprocess.Popen(
                 self._launch_command(),
                 stdout=self._log_handle or subprocess.DEVNULL,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
+            self._wait_for_server()
 
         self.viewer = RemoteViewer(
             host=self.host,
@@ -78,6 +85,7 @@ class AitviewerRemoteFitStreamer:
             self.close()
             raise RuntimeError(
                 f"Could not connect to AITviewer remote server at {self.host}:{self.port}."
+                f"{self._server_log_message()}"
             )
 
         self._mesh_node = None
@@ -88,7 +96,16 @@ class AitviewerRemoteFitStreamer:
 
     def _launch_command(self) -> list[str]:
         if self.camera_overlay is None:
-            return [sys.executable, "-m", "aitviewer.server"]
+            command = [
+                sys.executable,
+                "-m",
+                "mesh2smplx.visualization.aitviewer_camera_scene",
+                "--server-port",
+                str(self.port),
+            ]
+            self._extend_initial_camera_args(command, include_camera_scale=True)
+            self._extend_render_args(command)
+            return command
 
         overlay = self.camera_overlay
         command = [
@@ -117,7 +134,63 @@ class AitviewerRemoteFitStreamer:
         camera_ids = format_camera_ids(overlay.camera_ids)
         if camera_ids is not None:
             command.extend(["--cameras", camera_ids])
+        self._extend_initial_camera_args(command, include_camera_scale=False)
+        self._extend_render_args(command)
         return command
+
+    def _extend_initial_camera_args(
+        self,
+        command: list[str],
+        *,
+        include_camera_scale: bool,
+    ) -> None:
+        if self.initial_camera is None:
+            return
+        command.extend(["--initial-camera-json", str(self.initial_camera.camera_json)])
+        if include_camera_scale:
+            command.extend(["--camera-scale", str(self.initial_camera.camera_scale)])
+        if self.initial_camera.camera_id is not None:
+            command.extend(["--initial-camera-id", self.initial_camera.camera_id])
+
+    def _extend_render_args(self, command: list[str]) -> None:
+        if self.render_config.window_type:
+            command.extend(["--window-type", self.render_config.window_type])
+        if self.render_config.shadows_enabled:
+            command.append("--shadows")
+        command.extend(["--znear", str(self.render_config.znear)])
+        command.extend(["--zfar", str(self.render_config.zfar)])
+
+    def _wait_for_server(self) -> None:
+        deadline = time.monotonic() + max(1.0, self.timeout)
+        while time.monotonic() < deadline:
+            if self._process is not None and self._process.poll() is not None:
+                raise RuntimeError(
+                    "AITviewer server exited before opening the remote websocket."
+                    f"{self._server_log_message()}"
+                )
+            try:
+                with socket.create_connection((self.host, self.port), timeout=0.25):
+                    return
+            except OSError:
+                time.sleep(0.25)
+        raise RuntimeError(
+            f"AITviewer server did not open {self.host}:{self.port} within "
+            f"{self.timeout:.1f}s.{self._server_log_message()}"
+        )
+
+    def _server_log_message(self, lines: int = 30) -> str:
+        if self._log_handle is not None and not self._log_handle.closed:
+            self._log_handle.flush()
+        if self.server_log_path is None or not self.server_log_path.exists():
+            return ""
+        try:
+            log_lines = self.server_log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return f" See {self.server_log_path} for details."
+        if not log_lines:
+            return f" See {self.server_log_path} for details."
+        tail = "\n".join(log_lines[-lines:])
+        return f"\n\nAITviewer server log ({self.server_log_path}):\n{tail}"
 
     def __call__(self, progress: SmplFitProgress) -> None:
         from aitviewer.remote.renderables.meshes import RemoteMeshes

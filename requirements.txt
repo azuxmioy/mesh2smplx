@@ -1,0 +1,40 @@
+# Requires Python >=3.10. Python 3.11 is recommended for the local AITviewer UI.
+
+# Core runtime.
+numpy>=1.26,<3
+PyYAML>=6
+Pillow>=10
+tqdm>=4.66
+trimesh>=4
+smplx>=0.1.28
+
+# PyTorch. Keep this aligned with the Kaolin wheel index below.
+torch==2.5.1
+
+# OpenCV. Use one OpenCV wheel only. The headless contrib build is suitable for
+# servers and includes the cv2 APIs used by the OpenPose migration.
+# Replace with opencv-python>=4.11 if you need OpenCV's own GUI windows.
+opencv-contrib-python-headless>=4.11
+
+# Conversion and OpenPose numeric helpers. Disable only if you never use
+# SMPL-X<->SMPL conversion and never run the bundled OpenPose migration.
+scipy>=1.10
+
+# OpenPose weight download helpers. Disable if you manually provide OpenPose
+# weights under checkpoints/openpose135.
+huggingface-hub>=0.23
+
+# AITviewer integration. Disable if you do not need --aitviewer-launch,
+# --aitviewer-remote, or live fitting visualization.
+aitviewer @ git+https://github.com/eth-ait/aitviewer.git@v1.14.2
+PyQt6>=6.6
+
+# Virtual mesh rendering with sampled or calibrated cameras. Disable if you
+# always provide real images/keypoints and never render meshes to OpenPose views.
+# Kaolin wheels are platform/CUDA-specific. This link matches the server05
+# PyTorch 2.5.1 + CUDA 12.1 stack; replace it for another Torch/CUDA version.
+--find-links https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.5.1_cu121.html
+kaolin==0.18.0
+
+# Development only. Disable for normal users.
+ruff>=0.5

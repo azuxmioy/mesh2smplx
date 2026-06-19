@@ -1,0 +1,88 @@
+input:
+  mode: textured_mesh
+  root: data
+  # Optional. If omitted/null, data/calibration/cameras.json is auto-detected.
+  # Required when input.images is provided.
+  calibration: null
+  # Optional. If null, images are rendered from meshes before OpenPose.
+  images: null
+  meshes: data/meshes
+  textures: null
+  # null uses data/keypoints_2d and data/keypoints_3d.npy.
+  keypoints_2d: null
+  keypoints_3d: null
+  # Optional fixed body shape. null auto-detects data/body_shape.npy when present.
+  body_shape: null
+  image_glob: "*.png"
+  mesh_glob: "**/*"
+  texture_glob: null
+  frame_id_regex: ".*?(\\d+)$"
+  scale_to_meters: 0.001
+
+virtual_cameras:
+  count: 24
+  width: 1280
+  height: 720
+  focal_length: 1100.0
+  radius: auto
+  elevation_degrees: 10.0
+  azimuth_offset_degrees: 0.0
+  render_masks: true
+  # Green is easier for OpenPose/cropping than a black background.
+  background_color: green
+  output_dir: data/rendered
+
+keypoints:
+  provider: auto
+  weights_dir: checkpoints/openpose135
+  hf_repo: hohs/openpose135-weights
+  enable_hand: true
+  enable_face: true
+  crop_to_mask: true
+  crop_padding_pixels: 30
+  crop_aspect_height: 1200
+  crop_aspect_width: 900
+  max_input_size: 1280
+
+body_model:
+  type: smplx
+  gender: neutral
+  model_path: body_models
+  use_hands: true
+  use_face: true
+  num_betas: 10
+  num_expression_coeffs: 10
+  num_pca_comps: 12
+
+fitting:
+  device: cuda
+  output_dir: data
+  scan_surface_samples: 2000
+  body_vertex_samples: 2000
+  max_steps_per_stage: null
+  max_total_steps: null
+  tracking: true
+  loss_weights:
+    pose_obj: 1.0e5
+    pose_pr: 1.0
+    betas: 1.0
+    jaw: 1.0
+    f_exp: 0.01
+    limb: 1.0e4
+    icp: 50.0
+
+conversion:
+  output_types:
+    - smplx
+  model_path: null
+  gender: null
+  transfer_matrix: null
+  transfer_dir: null
+  output_dir: null
+  num_steps: 200
+  learning_rate: 0.01
+  beta_regularizer: 1.0e-4
+  optimize_betas: true
+
+viewer:
+  enabled: false

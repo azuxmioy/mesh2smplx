@@ -13,7 +13,7 @@ env/
 
 # Generated capture outputs
 /outputs/
-/local_configs/
+/data/
 /images/
 /crop_images/
 /masks/
@@ -25,7 +25,10 @@ env/
 
 # Restricted or large assets
 /SMPL/
-/body_models/
+/body_models/*
+!/body_models/README.md
+/checkpoints/*
+!/checkpoints/README.md
 /models/
 *.pkl
 *.npz
@@ -44,3 +47,4 @@ env/
 .DS_Store
 .idea/
 imgui.ini
+aitvconfig.yaml

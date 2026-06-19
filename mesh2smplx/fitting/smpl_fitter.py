@@ -19,7 +19,6 @@ from .losses import (
     keypoint_objective,
     loss_weights,
     original_joint_weights,
-    weighted_keypoint_mse,
 )
 from .mesh_losses import MeshTarget, symmetric_chamfer_loss
 from .schedule import (
@@ -28,7 +27,6 @@ from .schedule import (
     POSE_INIT_ID_1,
     POSE_INIT_ID_2,
     BODY_CONTOUR,
-    HANDS,
     FitStage,
     legacy_schedule,
 )
@@ -175,158 +173,6 @@ class SmplFitter:
                     target.data.copy_(src)
                 elif src.shape[1:] == target.shape[1:]:
                     target.data.copy_(src[: target.shape[0]])
-
-    def fit_keypoints(
-        self,
-        keypoints_3d: torch.Tensor,
-        iterations: int | None = None,
-        learning_rate: float | None = None,
-        steps_per_iter: int | None = None,
-        pose_shape_iters: int | None = None,
-        hand_iters: int | None = None,
-        face_iters: int | None = None,
-        optimize_shape: bool = True,
-        staged: bool = True,  # kept for back-compat; the keypoint schedule is always staged
-        log_every: int = 25,
-        progress_callback: FitProgressCallback | None = None,
-        callback_interval: int = 25,
-    ) -> SmplFitResult:
-        """Fit body model to 3D keypoints, reproducing the legacy keypoint schedule.
-
-        This mirrors the original ``BaseFitter.optimize_pose_only`` followed by
-        the keypoint terms of ``optimize_pose_shape`` (the scan/ICP terms are
-        dropped — this is the keypoint-only path): progressive joint exposure,
-        the per-joint ``body_pose_prior`` exp barriers, legacy joint weights, and
-        the ``/(1+it)`` loss-weight schedule (pose-only uses ``it/4``).
-
-        ``iterations`` is the number of OUTER iterations of the pose-only stage
-        (each runs ``steps_per_iter`` Adam steps); ``pose_shape_iters`` outer
-        iterations of the betas-enabled stage follow.
-        """
-        device = torch.device(self.fitting_config.device)
-        keypoints_3d = keypoints_3d.to(device=device, dtype=torch.float32)
-        body_model = self.create_body_model(batch_size=len(keypoints_3d))
-        self._initialize_root_orientation_from_keypoints(body_model, keypoints_3d)
-        self._initialize_translation_from_keypoints(body_model, keypoints_3d)
-
-        # Resolve the schedule from config; explicit method args override it.
-        sched = self.fitting_config.schedule
-        iterations = int(sched["iterations"]) if iterations is None else iterations
-        steps_per_iter = int(sched["steps_per_iter"]) if steps_per_iter is None else steps_per_iter
-        pose_shape_iters = int(sched["pose_shape_iters"]) if pose_shape_iters is None else pose_shape_iters
-        hand_iters = int(sched["hand_iters"]) if hand_iters is None else hand_iters
-        face_iters = int(sched["face_iters"]) if face_iters is None else face_iters
-        pose_only_lr = float(sched["pose_only_lr"]) if learning_rate is None else learning_rate
-        pose_shape_lr = float(sched["pose_shape_lr"])
-        hand_lr = float(sched["hand_lr"])
-        face_lr = float(sched["face_lr"])
-
-        num_joints = keypoints_3d.shape[1]
-        with torch.no_grad():
-            upper = min(body_model(return_verts=False).joints.shape[1], num_joints)
-        joint_weights = original_joint_weights(num_joints, device=device)
-        weight = loss_weights(self.fitting_config.loss_weights)
-
-        body_contour = torch.tensor(
-            [idx for idx in BODY_CONTOUR if idx < upper], dtype=torch.long, device=device
-        )
-        hand_ids = torch.tensor([idx for idx in HANDS if idx < upper], dtype=torch.long, device=device)
-        all_ids = torch.arange(upper, dtype=torch.long, device=device)
-
-        pose_params = [body_model.transl, body_model.global_orient, body_model.body_pose]
-        shape_params = list(pose_params)
-        if optimize_shape and hasattr(body_model, "betas") and not self._betas_calibrated:
-            shape_params = pose_params + [body_model.betas]
-
-        # Each stage: name, params, outer_iters, lr, joint-id tensor (None=progressive),
-        # term names to compute, and the it-schedule divisor.
-        stages: list[tuple] = [
-            ("pose_only", pose_params, iterations, pose_only_lr, None, ("pose_obj", "pose_pr"), 4.0),
-            ("pose_shape", shape_params, pose_shape_iters, pose_shape_lr, body_contour, ("pose_obj", "pose_pr", "betas"), 1.0),
-        ]
-        # refine_hands: optimize the hand PCA against the hand keypoints (25:67).
-        if hand_iters > 0 and self.body_config.use_hands and hasattr(body_model, "left_hand_pose") and len(hand_ids) > 0:
-            stages.append(
-                ("hands", [body_model.left_hand_pose, body_model.right_hand_pose],
-                 hand_iters, hand_lr, hand_ids, ("pose_obj",), 1.0)
-            )
-        # refine_face: optimize jaw/expression/eyes against all keypoints.
-        if face_iters > 0 and self.body_config.use_face and hasattr(body_model, "jaw_pose"):
-            face_params = [body_model.jaw_pose, body_model.expression,
-                           body_model.leye_pose, body_model.reye_pose]
-            stages.append(("face", face_params, face_iters, face_lr, all_ids, ("pose_obj", "jaw", "f_exp"), 1.0))
-
-        total_steps = sum(stage[2] for stage in stages) * steps_per_iter
-        total_step = 0
-        last_loss = None
-        for name, params, outer_iters, lr, stage_ids, terms, sched_scale in stages:
-            optimizer = torch.optim.Adam(params, lr=lr, betas=(0.9, 0.999))
-            for it in range(outer_iters):
-                ids = self._progressive_ids(it, upper, device) if stage_ids is None else stage_ids
-                sched_it = it / sched_scale
-                for _ in range(steps_per_iter):
-                    total_step += 1
-                    optimizer.zero_grad(set_to_none=True)
-                    output = body_model(return_verts=False)
-                    raw: dict[str, torch.Tensor] = {
-                        "pose_obj": keypoint_objective(
-                            keypoints_3d[:, ids], output.joints[:, ids], joint_weights[ids]
-                        )
-                    }
-                    if "pose_pr" in terms and hasattr(body_model, "body_pose"):
-                        raw["pose_pr"] = body_pose_prior(body_model.body_pose)
-                    if "betas" in terms and hasattr(body_model, "betas") and not self._betas_calibrated:
-                        raw["betas"] = (body_model.betas ** 2).mean()
-                    if "jaw" in terms and hasattr(body_model, "jaw_pose"):
-                        raw["jaw"] = (body_model.jaw_pose ** 2).sum()
-                    if "f_exp" in terms and hasattr(body_model, "expression"):
-                        raw["f_exp"] = (body_model.expression ** 2).sum()
-                    weighted = {key: weight[key](value, sched_it) for key, value in raw.items()}
-                    loss = torch.stack(list(weighted.values())).sum()
-                    loss.backward()
-                    optimizer.step()
-                    last_loss = float(loss.detach().cpu())
-                    if log_every and (total_step == 1 or total_step % log_every == 0):
-                        parts = ", ".join(
-                            f"{key}={value.detach().item():.4f}" for key, value in weighted.items()
-                        )
-                        print(
-                            f"step {total_step:04d}/{total_steps} stage={name} it={it:02d} "
-                            f"njoints={len(ids)} loss={last_loss:.4f} {parts}"
-                        )
-                    if progress_callback is not None and self._should_emit_progress(
-                        total_step, total_steps, callback_interval
-                    ):
-                        with torch.no_grad():
-                            snapshot = body_model(return_verts=True)
-                            progress_callback(
-                                SmplFitProgress(
-                                    step=total_step,
-                                    total_steps=total_steps,
-                                    phase=name,
-                                    loss=last_loss,
-                                    vertices=snapshot.vertices.detach().cpu(),
-                                    joints=snapshot.joints.detach().cpu(),
-                                    target_joints=keypoints_3d[..., :3].detach().cpu(),
-                                    faces=body_model.faces,
-                                )
-                            )
-
-        with torch.no_grad():
-            output = body_model(return_verts=True)
-            params = {key: val.detach().cpu() for key, val in body_model.named_parameters()}
-            vertices = output.vertices.detach().cpu()
-            joints = output.joints.detach().cpu()
-
-        return SmplFitResult(
-            params=params,
-            model_type=self.body_config.type,
-            gender=self.body_config.gender,
-            vertices=vertices,
-            joints=joints,
-            faces=body_model.faces,
-            loss=last_loss,
-        )
 
     def fit_full(
         self,
@@ -492,30 +338,6 @@ class SmplFitter:
                 faces=body_model.faces,
                 loss=last_loss,
             )
-
-    @staticmethod
-    def _progressive_ids(outer_it: int, upper: int, device: torch.device) -> torch.Tensor:
-        """Legacy progressive joint exposure for the pose-only stage."""
-        if outer_it < 5:
-            values = POSE_INIT_ID_0
-        elif outer_it < 10:
-            values = POSE_INIT_ID_1
-        elif outer_it < 15:
-            values = POSE_INIT_ID_2
-        else:
-            values = BODY_CONTOUR
-        return torch.tensor([idx for idx in values if idx < upper], dtype=torch.long, device=device)
-
-    @staticmethod
-    def _joint_weights(joint_count: int, device: torch.device) -> torch.Tensor:
-        weights = torch.ones(joint_count, 1, dtype=torch.float32, device=device)
-        if joint_count >= 25:
-            weights[:25] = 8.0
-        if joint_count >= 67:
-            weights[25:67] = 1.5
-        if joint_count > 67:
-            weights[67:] = 0.35
-        return weights
 
     @staticmethod
     def _keypoint_confidence(keypoints_3d: torch.Tensor) -> torch.Tensor:
@@ -821,23 +643,55 @@ class SmplFitter:
         interval = max(1, interval)
         return step == 1 or step == total_steps or step % interval == 0
 
-    def save_result(self, result: SmplFitResult, output_dir: Path) -> None:
-        output_dir.mkdir(parents=True, exist_ok=True)
+    def save_result_json(
+        self,
+        result: SmplFitResult,
+        output_path: Path,
+        *,
+        batch_index: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        batch_size = result.vertices.shape[0] if result.vertices is not None else None
         serializable: dict[str, Any] = {
             "model_type": result.model_type,
             "gender": result.gender,
-            "params": {key: value.detach().cpu().tolist() for key, value in result.params.items()},
+            "loss": result.loss,
+            "params": {
+                key: self._select_param_batch(value, batch_index, batch_size).tolist()
+                for key, value in result.params.items()
+            },
         }
+        if metadata:
+            serializable.update(metadata)
         import json
 
-        with open(output_dir / "smpl_params.json", "w", encoding="utf-8") as handle:
+        with open(output_path, "w", encoding="utf-8") as handle:
             json.dump(serializable, handle, indent=2)
+
+    def save_result(self, result: SmplFitResult, output_dir: Path) -> None:
+        self.save_result_json(result, output_dir / "smpl_params.json")
+
+    @staticmethod
+    def _select_param_batch(
+        value: torch.Tensor,
+        batch_index: int | None,
+        batch_size: int | None,
+    ) -> torch.Tensor:
+        tensor = value.detach().cpu()
+        if batch_index is None or tensor.ndim == 0:
+            return tensor
+        if batch_size is not None and tensor.shape[0] == batch_size:
+            return tensor[batch_index : batch_index + 1]
+        if batch_size is None and tensor.shape[0] > 1:
+            return tensor[batch_index : batch_index + 1]
+        return tensor
 
     def save_mesh_obj(self, result: SmplFitResult, output_path: Path, batch_index: int = 0) -> None:
         if result.vertices is None or result.faces is None:
             raise ValueError("Fit result does not contain vertices/faces")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        vertices = result.vertices[batch_index].numpy()
+        vertices = result.vertices[batch_index].detach().cpu().numpy()
         faces = result.faces
         with open(output_path, "w", encoding="utf-8") as handle:
             for vertex in vertices:

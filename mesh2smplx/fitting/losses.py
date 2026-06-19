@@ -140,31 +140,3 @@ def loss_weights(base: dict[str, float] | None = None) -> dict:
         "pose_obj": lambda cst, it, w=b["pose_obj"]: w * cst / (1 + it),
         "icp": lambda cst, it, w=b["icp"]: w * cst / (1 + it),
     }
-
-
-def weighted_keypoint_mse(
-    observed: torch.Tensor,
-    predicted: torch.Tensor,
-    weights: torch.Tensor | None = None,
-) -> torch.Tensor:
-    """Weighted MSE for 3D keypoints.
-
-    `observed` is expected to contain xyz plus confidence in the last channel.
-    """
-    residual = (observed[..., :3] - predicted) ** 2
-    per_joint = residual.sum(dim=-1)
-    if observed.shape[-1] > 4:
-        confidence = observed[..., 4]
-    elif observed.shape[-1] > 3:
-        confidence = observed[..., 3]
-    else:
-        confidence = torch.ones_like(per_joint)
-    if weights is not None:
-        confidence = confidence * weights.squeeze(-1)
-    return (per_joint * confidence).mean()
-
-
-def gmof(residual: torch.Tensor, rho: float = 1.0) -> torch.Tensor:
-    """Geman-McClure robustifier, replacing `robust_loss_pytorch` for simple cases."""
-    squared = residual.square()
-    return (rho**2) * squared / (squared + rho**2)

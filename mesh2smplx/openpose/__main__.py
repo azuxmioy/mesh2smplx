@@ -44,18 +44,31 @@ def build_parser() -> argparse.ArgumentParser:
     out = p.add_argument_group("output (any combo)")
     out.add_argument("--write_json", type=Path, help="Write CMU OpenPose JSON here.")
     out.add_argument("--write_images", type=Path, help="Write overlay PNGs here.")
-    out.add_argument("--write_video", type=Path, help="Write overlay video here (video input only).")
+    out.add_argument(
+        "--write_video",
+        type=Path,
+        help="Write overlay video here (video input only).",
+    )
 
     det = p.add_argument_group("detection")
     det.add_argument("--no_hand", action="store_true", help="Skip hand network (faster).")
     det.add_argument("--no_face", action="store_true", help="Skip face network (faster).")
     det.add_argument("--number_people_max", type=int, default=0,
                      help="Keep only the top-N people by body score. 0 = no cap.")
+    det.add_argument("--max_input_size", type=int, default=None,
+                     help="Resize detector input so its longest side is at most this value.")
+    det.add_argument("--mask", type=Path,
+                     help="Optional mask for --image cropping.")
+    det.add_argument("--crop_to_mask", action="store_true",
+                     help="Crop --image around --mask before detection, then map keypoints back.")
+    det.add_argument("--crop_padding_pixels", type=int, default=30)
+    det.add_argument("--crop_aspect_height", type=int, default=1200)
+    det.add_argument("--crop_aspect_width", type=int, default=900)
 
     rt = p.add_argument_group("runtime")
     rt.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     rt.add_argument("--weights_dir", type=Path,
-                    help="Load .pth files from this directory; skips HF download.")
+                    help="Checkpoint directory for .pth files; missing files are downloaded here.")
     rt.add_argument("--hf_repo", default=None, help="Override HF mirror for weights.")
     rt.add_argument("--overwrite", action="store_true",
                     help="Re-run on inputs whose output already exists (--image_dir only).")
@@ -76,12 +89,9 @@ def _resolve_device(spec: str) -> str:
 
 def _resolve_weight_paths(args: argparse.Namespace) -> dict | None:
     if args.weights_dir is not None:
-        d = args.weights_dir
-        return {
-            "body25": str(d / "body_pose_model_25.pth"),
-            "hand": str(d / "hand_pose_model.pth"),
-            "face": str(d / "facenet.pth"),
-        }
+        from .weights import resolve_weights
+
+        return resolve_weights(repo_id=args.hf_repo, cache_dir=str(args.weights_dir))
     if args.hf_repo is not None:
         from .weights import resolve_weights
         return resolve_weights(repo_id=args.hf_repo)
@@ -99,8 +109,11 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --write_video requires --video", file=sys.stderr)
         return 2
     if not (args.write_json or args.write_images or args.write_video):
-        print("error: nothing to do — pass at least one of --write_json/--write_images/--write_video",
-              file=sys.stderr)
+        print(
+            "error: nothing to do — pass at least one of "
+            "--write_json/--write_images/--write_video",
+            file=sys.stderr,
+        )
         return 2
 
     from tqdm import tqdm
@@ -117,7 +130,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.image is not None:
-        json_path = (args.write_json / f"{args.image.stem}_keypoints.json") if args.write_json else None
+        json_path = (
+            args.write_json / f"{args.image.stem}_keypoints.json"
+            if args.write_json
+            else None
+        )
         img_path = (args.write_images / f"{args.image.stem}.png") if args.write_images else None
         process_image(
             detector, args.image,
@@ -125,6 +142,12 @@ def main(argv: list[str] | None = None) -> int:
             write_image=img_path,
             render_pose=args.render_pose,
             number_people_max=args.number_people_max,
+            mask_path=args.mask,
+            crop_to_mask=args.crop_to_mask,
+            crop_padding_pixels=args.crop_padding_pixels,
+            crop_aspect_height=args.crop_aspect_height,
+            crop_aspect_width=args.crop_aspect_width,
+            max_input_size=args.max_input_size,
         )
 
     elif args.image_dir is not None:
@@ -135,6 +158,7 @@ def main(argv: list[str] | None = None) -> int:
             render_pose=args.render_pose,
             number_people_max=args.number_people_max,
             overwrite=args.overwrite,
+            max_input_size=args.max_input_size,
             progress=lambda it: tqdm(it, desc="openpose-135"),
         )
 

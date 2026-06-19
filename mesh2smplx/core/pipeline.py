@@ -22,7 +22,12 @@ class Pipeline:
             "normalize cameras and frame ids",
         ]
         if self.config.input.mode == "textured_mesh":
-            stages.append("render virtual camera images")
+            if self.config.input.images is not None:
+                stages.append("load calibrated camera images")
+            elif self.config.input.cameras is not None:
+                stages.append("render mesh images from calibration cameras")
+            else:
+                stages.append("render mesh images from heuristic semi-sphere cameras")
         stages.extend(
             [
                 f"keypoints: {self.config.keypoints.provider}",
@@ -37,7 +42,7 @@ class Pipeline:
 
     def build_source(self) -> "DataSource":
         if self.config.input.mode == "textured_mesh":
-            if self.config.virtual_cameras is None:
+            if self.config.input.images is None and self.config.virtual_cameras is None:
                 raise ValueError("textured_mesh mode requires virtual_cameras config")
             from .data.textured_mesh import TexturedMeshSource
 
@@ -63,8 +68,7 @@ class Pipeline:
         keypoints_dir = keypoint_config.output_dir or keypoint_config.path
         if keypoints_dir is None:
             raise ValueError(
-                "Triangulation needs keypoints.output_dir (or keypoints.path) to "
-                "locate the 2D keypoint JSON files."
+                "Triangulation needs input.keypoints_2d to locate the 2D keypoint JSON files."
             )
 
         # Stable camera order shared by projection matrices and 2D stacks.
@@ -85,9 +89,8 @@ class Pipeline:
 
         keypoints_3d = np.stack(keypoints_3d, axis=0)  # (num_frames, num_joints, 5)
 
-        output_dir = self.config.fitting.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        keypoints_path = output_dir / "keypoints_3d.npy"
+        keypoints_path = self.config.input.keypoints_3d or self.config.input.root / "keypoints_3d.npy"
+        keypoints_path.parent.mkdir(parents=True, exist_ok=True)
         np.save(keypoints_path, keypoints_3d)
 
         print(f"frames={bundle.frame_ids}")
@@ -96,5 +99,5 @@ class Pipeline:
         print(f"wrote={keypoints_path}")
         print(
             "Next step: fit with "
-            f"`mesh2smplx fit-full --config <config> --keypoints3d {keypoints_path}`"
+            "`python main.py --config <config>`"
         )
