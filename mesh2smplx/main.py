@@ -1,4 +1,4 @@
-"""Single-purpose command line entry point for SMPL-family mesh fitting."""
+"""Single-purpose command-line entry point for SMPL-family mesh fitting."""
 
 from __future__ import annotations
 
@@ -6,9 +6,20 @@ import argparse
 import re
 from pathlib import Path
 
-from .core.config import load_config
+from .core.config import load_config, load_viewer_config
 from .core.frame_selection import parse_frame_range
 from .core.pipeline import Pipeline
+
+
+def _parse_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(
+        f"expected a boolean value such as true/false, got {value!r}"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,6 +47,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output-dir", type=Path, default=None, help="Override output directory.")
     parser.add_argument(
+        "--record-progress",
+        type=Path,
+        default=None,
+        help="Save optimizer snapshots to a .npz file for offline AITviewer replay.",
+    )
+    parser.add_argument(
+        "--record-progress-interval",
+        type=int,
+        default=1,
+        help="Snapshot interval for --record-progress. Use 1 for every emitted optimizer step.",
+    )
+    parser.add_argument(
         "--betas",
         type=Path,
         default=None,
@@ -45,57 +68,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--aitviewer-remote",
+        "--tracking",
+        type=_parse_bool,
         default=None,
-        help="Optional AITviewer remote server as HOST:PORT, for example localhost:8417.",
-    )
-    parser.add_argument("--aitviewer-launch", action="store_true", help="Launch a local AITviewer server.")
-    parser.add_argument("--aitviewer-update-interval", type=int, default=25)
-    parser.add_argument("--aitviewer-timeout", type=float, default=10.0)
-    parser.add_argument("--aitviewer-log", type=Path, default=None)
-    parser.add_argument(
-        "--aitviewer-window-type",
-        default=None,
-        help="Override AITviewer backend, for example pyqt6, pyqt5, or glfw.",
+        metavar="true|false",
+        help="Override fitting.tracking from the config.",
     )
     parser.add_argument(
-        "--aitviewer-camera-overlay",
+        "--aitviewer-launch",
         action="store_true",
-        help="When launching AITviewer, add calibrated cameras and image billboards.",
+        help="Launch a local AITviewer server using the config's viewer settings.",
     )
-    parser.add_argument(
-        "--aitviewer-camera-json",
-        type=Path,
-        default=None,
-        help="Override camera calibration JSON. Defaults to input.cameras.",
-    )
-    parser.add_argument(
-        "--aitviewer-image-root",
-        type=Path,
-        default=None,
-        help="Override camera image root. Defaults to input.images.",
-    )
-    parser.add_argument(
-        "--aitviewer-cameras",
-        default=None,
-        help="Comma-separated camera ids to show. Defaults to the first --aitviewer-max-cameras ids.",
-    )
-    parser.add_argument("--aitviewer-max-cameras", type=int, default=4)
-    parser.add_argument("--aitviewer-camera-scale", type=float, default=None)
-    parser.add_argument(
-        "--aitviewer-initial-camera",
-        default="auto",
-        help=(
-            "Initial camera for launched AITviewer windows: 'auto' uses the first "
-            "configured camera, 'none' disables it, or pass a camera id."
-        ),
-    )
-    parser.add_argument("--aitviewer-billboard-distance", type=float, default=2.0)
-    parser.add_argument("--aitviewer-billboard-alpha", type=float, default=0.55)
-    parser.add_argument("--aitviewer-image-extensions", default=".png,.jpg,.jpeg")
-    parser.add_argument("--aitviewer-shadows", action="store_true", help="Enable viewer shadows.")
-    parser.add_argument("--aitviewer-znear", type=float, default=0.05)
-    parser.add_argument("--aitviewer-zfar", type=float, default=50.0)
     return parser
 
 
@@ -300,6 +283,50 @@ def _ensure_keypoints3d(config, keypoints_path: Path) -> None:
         )
 
 
+def _load_launch_viewer_config(config_path: Path, fallback):
+    viewer_config_path = config_path.parent / "aitviewer.yaml"
+    if not viewer_config_path.exists():
+        return fallback
+    return load_viewer_config(viewer_config_path)
+
+
+def _default_render_camera_json(config):
+    if config.input.cameras is None:
+        return None
+    if config.input.images is not None:
+        return config.input.cameras
+    if config.rendering is not None and config.rendering.mode == "virtual":
+        return None
+    return config.input.cameras
+
+
+class _ProgressCallbackMux:
+    def __init__(self, entries):
+        self.entries = [(callback, max(1, int(interval))) for callback, interval in entries]
+
+    def __call__(self, progress) -> None:
+        for callback, interval in self.entries:
+            if _should_emit_progress(progress.step, progress.total_steps, interval):
+                callback(progress)
+
+
+def _progress_callback_and_interval(entries):
+    from math import gcd
+
+    if not entries:
+        return None, 25
+    intervals = [max(1, int(interval)) for _, interval in entries]
+    base_interval = intervals[0]
+    for interval in intervals[1:]:
+        base_interval = gcd(base_interval, interval)
+    return _ProgressCallbackMux(entries), base_interval
+
+
+def _should_emit_progress(step: int, total_steps: int, interval: int) -> bool:
+    interval = max(1, int(interval))
+    return step == 1 or step == total_steps or step % interval == 0
+
+
 def fit_command(args: argparse.Namespace) -> None:
     import numpy as np
     import torch
@@ -309,8 +336,12 @@ def fit_command(args: argparse.Namespace) -> None:
     from .fitting.mesh_losses import load_mesh_target
 
     config = load_config(args.config)
+    if args.aitviewer_launch:
+        config.viewer = _load_launch_viewer_config(args.config, config.viewer)
     if args.betas is not None:
         config.body_model.betas_path = args.betas
+    if args.tracking is not None:
+        config.fitting.tracking = args.tracking
     tracking = config.fitting.tracking
     scan_surface_samples = config.fitting.scan_surface_samples
     body_vertex_samples = config.fitting.body_vertex_samples
@@ -354,9 +385,47 @@ def fit_command(args: argparse.Namespace) -> None:
 
     output_dir = args.output_dir or config.fitting.output_dir / "fitting"
     output_dir.mkdir(parents=True, exist_ok=True)
+    source_meshes = [
+        (target.vertices[0].detach().cpu().numpy(), target.faces.detach().cpu().numpy())
+        for target in mesh_targets
+    ]
 
     streamer = None
-    if args.aitviewer_remote or args.aitviewer_launch:
+    progress_recorder = None
+    progress_entries = []
+    if args.record_progress is not None:
+        from .visualization.fit_recording import FitProgressRecorder
+
+        progress_recorder = FitProgressRecorder(
+            args.record_progress,
+            source_meshes=source_meshes,
+            metadata={
+                "config": str(args.config),
+                "body_model_type": config.body_model.type,
+                "body_model_gender": config.body_model.gender,
+                "frame_indices": frame_indices,
+                "mesh_frame_ids": [mesh_frames[index].frame_id for index in frame_indices],
+                "mesh_paths": [str(mesh_frames[index].mesh_path) for index in frame_indices],
+                "scale_to_meters": config.input.scale_to_meters,
+                "camera_json": (
+                    str(_default_render_camera_json(config))
+                    if _default_render_camera_json(config) is not None
+                    else None
+                ),
+                "image_root": str(
+                    config.input.images
+                    or (
+                        config.rendering.output_dir / "images"
+                        if config.rendering is not None
+                        else ""
+                    )
+                ),
+            },
+        )
+        progress_entries.append((progress_recorder, args.record_progress_interval))
+
+    viewer_config = config.viewer
+    if viewer_config.enabled or args.aitviewer_launch:
         from .visualization.aitviewer_camera_scene import (
             CameraImageOverlayConfig,
             InitialCameraConfig,
@@ -365,32 +434,27 @@ def fit_command(args: argparse.Namespace) -> None:
         )
         from .visualization.aitviewer_live import AitviewerRemoteFitStreamer, parse_remote_address
 
-        host, port = parse_remote_address(args.aitviewer_remote)
+        host, port = parse_remote_address(viewer_config.remote)
         render_config = ViewerRenderConfig(
-            window_type=args.aitviewer_window_type,
-            shadows_enabled=args.aitviewer_shadows,
-            znear=args.aitviewer_znear,
-            zfar=args.aitviewer_zfar,
+            window_type=viewer_config.window_type,
+            shadows_enabled=viewer_config.shadows,
+            znear=viewer_config.znear,
+            zfar=viewer_config.zfar,
         )
         camera_scale = (
-            args.aitviewer_camera_scale
-            if args.aitviewer_camera_scale is not None
+            viewer_config.calibration_scale
+            if viewer_config.calibration_scale is not None
             else config.input.scale_to_meters
         )
-        source_meshes = [
-            (target.vertices[0].detach().cpu().numpy(), target.faces.detach().cpu().numpy())
-            for target in mesh_targets
-        ]
         initial_camera = None
-        initial_camera_raw = args.aitviewer_initial_camera.strip()
+        initial_camera_raw = viewer_config.initial_camera.strip()
         initial_camera_value = initial_camera_raw.lower() or "auto"
         if args.aitviewer_launch and initial_camera_value != "none":
-            camera_json = args.aitviewer_camera_json or config.input.cameras
+            camera_json = viewer_config.camera_json or _default_render_camera_json(config)
             if camera_json is None:
                 if initial_camera_value != "auto":
                     raise ValueError(
-                        "--aitviewer-initial-camera requires --aitviewer-camera-json "
-                        "or input.cameras in the config."
+                        "viewer.initial_camera requires viewer.camera_json or input.cameras."
                     )
             else:
                 initial_camera = InitialCameraConfig(
@@ -403,45 +467,52 @@ def fit_command(args: argparse.Namespace) -> None:
                     camera_scale=camera_scale,
                 )
         camera_overlay = None
-        if args.aitviewer_camera_overlay:
-            camera_json = args.aitviewer_camera_json or config.input.cameras
-            image_root = args.aitviewer_image_root or config.input.images
+        if viewer_config.camera_overlay:
+            camera_json = viewer_config.camera_json or _default_render_camera_json(config)
+            image_root = (
+                viewer_config.image_root
+                or config.input.images
+                or (
+                    config.rendering.output_dir / "images"
+                    if config.rendering is not None
+                    else None
+                )
+            )
             if camera_json is None or image_root is None:
                 raise ValueError(
-                    "Camera overlay requires --aitviewer-camera-json/--aitviewer-image-root "
-                    "or input.cameras/input.images in the config."
+                    "viewer.camera_overlay requires viewer.camera_json/input.cameras and "
+                    "viewer.image_root/input.images/rendered images in the config."
                 )
             if not args.aitviewer_launch:
                 print(
-                    "Warning: --aitviewer-camera-overlay only affects viewers launched by this "
+                    "Warning: viewer.camera_overlay only affects viewers launched by this "
                     "process. Existing remote viewers must already contain camera overlays."
                 )
             camera_overlay = CameraImageOverlayConfig(
                 camera_json=camera_json,
                 image_root=image_root,
                 frame_ids=tuple(mesh_frames[index].frame_id for index in frame_indices),
-                camera_ids=parse_camera_ids(args.aitviewer_cameras),
-                max_cameras=args.aitviewer_max_cameras,
+                camera_ids=parse_camera_ids(viewer_config.cameras),
+                max_cameras=viewer_config.max_cameras,
                 camera_scale=camera_scale,
-                billboard_distance=args.aitviewer_billboard_distance,
-                billboard_alpha=args.aitviewer_billboard_alpha,
-                image_extensions=tuple(
-                    item.strip()
-                    for item in args.aitviewer_image_extensions.split(",")
-                    if item.strip()
-                ),
+                billboard_distance=viewer_config.billboard_distance,
+                billboard_alpha=viewer_config.billboard_alpha,
+                image_extensions=viewer_config.image_extensions,
             )
         streamer = AitviewerRemoteFitStreamer(
             host=host,
             port=port,
-            timeout=args.aitviewer_timeout,
+            timeout=viewer_config.timeout,
             launch=args.aitviewer_launch,
-            server_log_path=args.aitviewer_log or output_dir / "aitviewer_server.log",
+            server_log_path=viewer_config.log_path or output_dir / "aitviewer_server.log",
             source_meshes=source_meshes,
             camera_overlay=camera_overlay,
             initial_camera=initial_camera,
             render_config=render_config,
         )
+        progress_entries.append((streamer, viewer_config.update_interval))
+
+    progress_callback, progress_callback_interval = _progress_callback_and_interval(progress_entries)
 
     fitter = SmplFitter(config.body_model, config.fitting)
     try:
@@ -451,8 +522,8 @@ def fit_command(args: argparse.Namespace) -> None:
                 keypoints_tensor,
                 mesh_targets=mesh_targets,
                 tracking=True,
-                progress_callback=streamer,
-                callback_interval=args.aitviewer_update_interval,
+                progress_callback=progress_callback,
+                callback_interval=progress_callback_interval,
                 max_steps_per_stage=max_steps_per_stage,
                 max_total_steps=max_total_steps,
                 body_vertex_samples=body_vertex_samples,
@@ -462,31 +533,30 @@ def fit_command(args: argparse.Namespace) -> None:
                 fitter.fit_full(
                     keypoints_tensor,
                     mesh_targets=mesh_targets,
-                    progress_callback=streamer,
-                    callback_interval=args.aitviewer_update_interval,
+                    progress_callback=progress_callback,
+                    callback_interval=progress_callback_interval,
                     max_steps_per_stage=max_steps_per_stage,
                     max_total_steps=max_total_steps,
                     body_vertex_samples=body_vertex_samples,
                 )
             ]
-    except Exception:
+
+        tracking_outputs = tracking and len(frame_indices) > 1
+        written_outputs = _write_output_model_results(
+            config,
+            fitter,
+            results,
+            selected_mesh_frames,
+            mesh_targets,
+            output_dir,
+            tracking_outputs,
+        )
+        last_loss = results[-1].loss if tracking_outputs else results[0].loss
+    finally:
+        if progress_recorder is not None:
+            progress_recorder.save()
         if streamer is not None:
             streamer.close()
-        raise
-
-    tracking_outputs = tracking and len(frame_indices) > 1
-    written_outputs = _write_output_model_results(
-        config,
-        fitter,
-        results,
-        selected_mesh_frames,
-        mesh_targets,
-        output_dir,
-        tracking_outputs,
-    )
-    last_loss = results[-1].loss if tracking_outputs else results[0].loss
-    if streamer is not None:
-        streamer.close()
 
     print(f"final_loss={last_loss:.6f}" if last_loss is not None else "final_loss=None")
     print(f"fit_frame_indices={frame_indices}")

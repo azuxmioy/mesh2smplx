@@ -320,7 +320,17 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--initial-camera-json", type=Path)
     parser.add_argument("--initial-camera-id", default=None)
     parser.add_argument("--max-cameras", type=int, default=4)
-    parser.add_argument("--camera-scale", type=float, default=0.001)
+    parser.add_argument(
+        "--calibration-scale",
+        "--camera-scale",
+        dest="camera_scale",
+        type=float,
+        default=0.001,
+        help=(
+            "Scale camera translations into the mesh coordinate system. This must match "
+            "input.scale_to_meters; use --billboard-distance for visual size."
+        ),
+    )
     parser.add_argument("--billboard-distance", type=float, default=2.0)
     parser.add_argument("--billboard-alpha", type=float, default=0.55)
     parser.add_argument("--image-extensions", default=".png,.jpg,.jpeg")

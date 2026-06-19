@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from ..config import InputConfig, VirtualCameraConfig
+from ..config import InputConfig, RenderingConfig
 from ..data.camera_io import load_camera_models, resolve_camera_json
 from ..data.interfaces import CameraModel, FrameObservation, ObservationBundle
 from ..data.mesh_sequence import MeshFrame
@@ -35,7 +35,7 @@ def build_orbit_camera_ids(count: int) -> list[str]:
 
 
 def placeholder_virtual_cameras(
-    config: VirtualCameraConfig,
+    config: RenderingConfig,
     center: np.ndarray | None = None,
     radius: float | None = None,
 ) -> dict[str, CameraModel]:
@@ -76,10 +76,10 @@ def placeholder_virtual_cameras(
 
 def render_textured_mesh_sequence(
     input_config: InputConfig,
-    camera_config: VirtualCameraConfig,
+    camera_config: RenderingConfig,
     mesh_frames: list[MeshFrame],
 ) -> ObservationBundle:
-    """Build virtual-camera observations for textured meshes.
+    """Build rendered-camera observations for textured meshes.
 
     The returned bundle contains the camera records and output paths expected by
     downstream keypoint detection. Rendering backends should write images and
@@ -91,7 +91,9 @@ def render_textured_mesh_sequence(
     observations = []
     image_root = camera_config.output_dir / "images"
     mask_root = camera_config.output_dir / "masks"
-    using_calibrated_cameras = input_config.cameras is not None
+    using_calibrated_cameras = (
+        camera_config.mode in {"auto", "real"} and input_config.cameras is not None
+    )
     if using_calibrated_cameras:
         camera_json = resolve_camera_json(input_config.cameras)
         cameras = load_camera_models(camera_json, images_root=None)
@@ -407,7 +409,7 @@ def _look_at_extrinsics(position: np.ndarray, target: np.ndarray) -> np.ndarray:
 
 def _estimate_orbit_from_meshes(
     input_config: InputConfig,
-    camera_config: VirtualCameraConfig,
+    camera_config: RenderingConfig,
     mesh_frames: list[MeshFrame],
 ) -> tuple[np.ndarray, float]:
     center = np.zeros(3, dtype=np.float32)

@@ -70,6 +70,28 @@ def body_pose_prior(body_pose: torch.Tensor) -> torch.Tensor:
     )
 
 
+def _body_pose_joint_l2(body_pose: torch.Tensor, joint_ids: tuple[int, ...]) -> torch.Tensor:
+    pose = body_pose.reshape(body_pose.shape[0], -1, 3)
+    available_ids = [joint_id for joint_id in joint_ids if joint_id < pose.shape[1]]
+    if not available_ids:
+        return body_pose.new_zeros(())
+    return torch.sum(pose[:, available_ids] ** 2)
+
+
+def spine_pose_prior(body_pose: torch.Tensor) -> torch.Tensor:
+    """Extra L2 regularizer for SMPL spine joints.
+
+    ``body_pose`` excludes the root/global orientation. The zero-based body-pose
+    joint ids 2, 5, and 8 correspond to spine1, spine2, and spine3.
+    """
+    return _body_pose_joint_l2(body_pose, (2, 5, 8))
+
+
+def neck_pose_prior(body_pose: torch.Tensor) -> torch.Tensor:
+    """Extra L2 regularizer for SMPL neck/head joints."""
+    return _body_pose_joint_l2(body_pose, (11, 14))
+
+
 def hand_pose_prior(hand_pose: torch.Tensor) -> torch.Tensor:
     """Legacy per-axis exp-barrier hand-pose prior (BaseFitter.hand_pose_prior)."""
     ratio = 1
@@ -123,7 +145,8 @@ def loss_weights(base: dict[str, float] | None = None) -> dict:
     """
     b = {
         "limb": 1e4, "betas": 1.0, "pose_pr": 1.0, "lhand": 0.1, "rhand": 0.1,
-        "jaw": 1.0, "f_exp": 0.01, "pose_obj": 1e5, "icp": 50.0,
+        "spine_pose": 25.0, "neck_pose": 25.0, "jaw": 1.0, "f_exp": 0.01,
+        "pose_obj": 1e5, "icp": 50.0,
     }
     if base:
         b.update(base)
@@ -133,6 +156,8 @@ def loss_weights(base: dict[str, float] | None = None) -> dict:
         "reg_loss": lambda x, it: 1e-6 * x,
         "betas": lambda cst, it, w=b["betas"]: w * cst / (1 + it),
         "pose_pr": lambda cst, it, w=b["pose_pr"]: w * cst / (1 + it),
+        "spine_pose": lambda cst, it, w=b["spine_pose"]: w * cst / (1 + it),
+        "neck_pose": lambda cst, it, w=b["neck_pose"]: w * cst / (1 + it),
         "lhand": lambda cst, it, w=b["lhand"]: w * cst / (1 + it),
         "rhand": lambda cst, it, w=b["rhand"]: w * cst / (1 + it),
         "jaw": lambda cst, it, w=b["jaw"]: w * cst,

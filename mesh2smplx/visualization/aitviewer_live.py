@@ -120,7 +120,7 @@ class AitviewerRemoteFitStreamer:
             format_frame_ids(overlay.frame_ids),
             "--max-cameras",
             str(overlay.max_cameras),
-            "--camera-scale",
+            "--calibration-scale",
             str(overlay.camera_scale),
             "--billboard-distance",
             str(overlay.billboard_distance),
@@ -148,7 +148,7 @@ class AitviewerRemoteFitStreamer:
             return
         command.extend(["--initial-camera-json", str(self.initial_camera.camera_json)])
         if include_camera_scale:
-            command.extend(["--camera-scale", str(self.initial_camera.camera_scale)])
+            command.extend(["--calibration-scale", str(self.initial_camera.camera_scale)])
         if self.initial_camera.camera_id is not None:
             command.extend(["--initial-camera-id", self.initial_camera.camera_id])
 

@@ -1,7 +1,7 @@
 # Checkpoints
 
-This folder is intentionally empty in git. Runtime model checkpoints are
-restricted or large third-party assets and should stay local.
+This folder is intentionally empty in git. Runtime checkpoints are large
+third-party assets and should not be committed.
 
 The default OpenPose-135 checkpoint folder is:
 
@@ -12,9 +12,12 @@ checkpoints/openpose135/
   facenet.pth
 ```
 
-The main pipeline auto-fetches missing OpenPose-135 files from
-<https://huggingface.co/hohs/openpose135-weights> into that folder. You can
-override the location with:
+The main pipeline downloads missing OpenPose-135 files from
+<https://huggingface.co/hohs/openpose135-weights> into that folder the first time
+OpenPose runs. If the download fails, manually place the three `.pth` files
+there.
+
+To use a different location, set:
 
 ```yaml
 keypoints:

@@ -1,30 +1,11 @@
 input:
   mode: textured_mesh
   root: data
-  # Optional. If omitted/null, data/calibration/cameras.json is auto-detected.
-  calibration: null
-  # Optional. If null, images are rendered from meshes before OpenPose.
-  images: null
-  meshes: data/meshes
-  textures: null
-  keypoints_2d: null
-  keypoints_3d: null
-  body_shape: null
-  image_glob: "*.png"
-  mesh_glob: "**/*"
-  texture_glob: null
   frame_id_regex: ".*?(\\d+)$"
   scale_to_meters: 0.001
 
-virtual_cameras:
-  count: 24
-  width: 1280
-  height: 720
-  focal_length: 1100.0
-  radius: auto
-  elevation_degrees: 10.0
-  azimuth_offset_degrees: 0.0
-  render_masks: true
+rendering:
+  mode: auto
   background_color: green
   output_dir: data/rendered
 
@@ -42,7 +23,7 @@ keypoints:
 
 body_model:
   type: smplx
-  gender: neutral
+  gender: female
   model_path: body_models
   use_hands: true
   use_face: true
@@ -56,12 +37,13 @@ fitting:
   output_dir: data
   scan_surface_samples: 2000
   body_vertex_samples: 2000
-  max_steps_per_stage: 5
-  max_total_steps: null
+  max_total_steps: 2400
   tracking: true
   loss_weights:
-    pose_obj: 1.0e5
+    pose_obj: 1.0e2
     pose_pr: 1.0
+    spine_pose: 50.0
+    neck_pose: 50.0
     betas: 1.0
     jaw: 1.0
     f_exp: 0.01
@@ -71,15 +53,7 @@ fitting:
 conversion:
   output_types:
     - smplx
-  model_path: null
-  gender: null
-  transfer_matrix: null
-  transfer_dir: null
-  output_dir: null
   num_steps: 200
   learning_rate: 0.01
   beta_regularizer: 1.0e-4
   optimize_betas: true
-
-viewer:
-  enabled: false

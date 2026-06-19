@@ -1,11 +1,11 @@
-"""Textured mesh source from calibrated images or virtual cameras."""
+"""Textured mesh source from calibrated images or rendered mesh views."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config import InputConfig, VirtualCameraConfig
+from ..config import InputConfig, RenderingConfig
 from .camera_io import camera_image_dir, load_camera_models, resolve_camera_json
 from .interfaces import FrameObservation, ObservationBundle
 
@@ -13,7 +13,7 @@ from .interfaces import FrameObservation, ObservationBundle
 @dataclass
 class TexturedMeshSource:
     input_config: InputConfig
-    camera_config: VirtualCameraConfig | None
+    rendering_config: RenderingConfig | None
 
     def load(self, frames: list[int] | None = None) -> ObservationBundle:
         from .mesh_sequence import discover_mesh_sequence
@@ -22,11 +22,13 @@ class TexturedMeshSource:
         mesh_frames = discover_mesh_sequence(self.input_config, frames=frames)
         if self.input_config.images is not None:
             return load_calibrated_image_sequence(self.input_config, mesh_frames)
-        if self.camera_config is None:
-            raise ValueError("textured_mesh mode without input.images requires virtual_cameras config")
+        if self.rendering_config is None:
+            raise ValueError("textured_mesh mode without input.images requires rendering config")
+        if self.rendering_config.mode == "real" and self.input_config.cameras is None:
+            raise ValueError("rendering.mode=real requires input.cameras/input.calibration")
         return render_textured_mesh_sequence(
             input_config=self.input_config,
-            camera_config=self.camera_config,
+            camera_config=self.rendering_config,
             mesh_frames=mesh_frames,
         )
 

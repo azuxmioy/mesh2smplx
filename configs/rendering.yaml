@@ -1,0 +1,19 @@
+# Optional mesh-rendering details.
+# Loaded automatically from the same folder as the selected pipeline config.
+#
+# The main config controls:
+#   rendering.mode: auto | real | virtual
+#   rendering.background_color
+#   rendering.output_dir
+#
+# These options mostly matter when rendering.mode resolves to virtual.
+
+render_masks: true
+
+count: 24
+width: 1280
+height: 720
+focal_length: 1100.0
+radius: auto
+elevation_degrees: 10.0
+azimuth_offset_degrees: 0.0

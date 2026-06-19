@@ -24,17 +24,14 @@ scipy>=1.10
 # weights under checkpoints/openpose135.
 huggingface-hub>=0.23
 
-# AITviewer integration. Disable if you do not need --aitviewer-launch,
-# --aitviewer-remote, or live fitting visualization.
+# AITviewer integration. Disable if you do not need --aitviewer-launch or local
+# fitting visualization.
 aitviewer @ git+https://github.com/eth-ait/aitviewer.git@v1.14.2
 PyQt6>=6.6
 
 # Virtual mesh rendering with sampled or calibrated cameras. Disable if you
 # always provide real images/keypoints and never render meshes to OpenPose views.
-# Kaolin wheels are platform/CUDA-specific. This link matches the server05
-# PyTorch 2.5.1 + CUDA 12.1 stack; replace it for another Torch/CUDA version.
+# Kaolin wheels are platform/CUDA-specific. This link matches PyTorch 2.5.1 +
+# CUDA 12.1; replace it for another Torch/CUDA version.
 --find-links https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.5.1_cu121.html
 kaolin==0.18.0
-
-# Development only. Disable for normal users.
-ruff>=0.5

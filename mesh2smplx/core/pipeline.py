@@ -24,6 +24,16 @@ class Pipeline:
         if self.config.input.mode == "textured_mesh":
             if self.config.input.images is not None:
                 stages.append("load calibrated camera images")
+            elif (
+                self.config.rendering is not None
+                and self.config.rendering.mode == "real"
+            ):
+                stages.append("render mesh images from calibration cameras")
+            elif (
+                self.config.rendering is not None
+                and self.config.rendering.mode == "virtual"
+            ):
+                stages.append("render mesh images from heuristic semi-sphere cameras")
             elif self.config.input.cameras is not None:
                 stages.append("render mesh images from calibration cameras")
             else:
@@ -42,11 +52,11 @@ class Pipeline:
 
     def build_source(self) -> "DataSource":
         if self.config.input.mode == "textured_mesh":
-            if self.config.input.images is None and self.config.virtual_cameras is None:
-                raise ValueError("textured_mesh mode requires virtual_cameras config")
+            if self.config.input.images is None and self.config.rendering is None:
+                raise ValueError("textured_mesh mode requires rendering config")
             from .data.textured_mesh import TexturedMeshSource
 
-            return TexturedMeshSource(self.config.input, self.config.virtual_cameras)
+            return TexturedMeshSource(self.config.input, self.config.rendering)
         raise ValueError(f"Unsupported input mode: {self.config.input.mode}")
 
     def run(self) -> None:
@@ -99,5 +109,5 @@ class Pipeline:
         print(f"wrote={keypoints_path}")
         print(
             "Next step: fit with "
-            "`python main.py --config <config>`"
+            "`python -m mesh2smplx.main --config <config>`"
         )

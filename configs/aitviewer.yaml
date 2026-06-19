@@ -1,0 +1,22 @@
+# Optional AITviewer settings.
+# Loaded automatically only when running:
+#   python -m mesh2smplx.main --config configs/cpu.yaml --aitviewer-launch
+
+update_interval: 25
+timeout: 10.0
+
+window_type: pyqt6
+shadows: false
+znear: 0.05
+zfar: 50.0
+
+initial_camera: auto  # auto, none, or a camera id
+
+camera_overlay: false
+max_cameras: 4
+billboard_distance: 0.45
+billboard_alpha: 0.4
+image_extensions:
+  - .png
+  - .jpg
+  - .jpeg

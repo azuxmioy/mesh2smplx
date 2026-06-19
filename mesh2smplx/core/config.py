@@ -9,6 +9,7 @@ from typing import Any, Literal
 InputMode = Literal["textured_mesh"]
 BodyModelType = Literal["smpl", "smplh", "smplx"]
 KeypointProviderType = Literal["auto", "precomputed", "external_command", "openpose135"]
+RenderingMode = Literal["auto", "real", "virtual"]
 
 MODEL_TYPE_ALIASES: dict[str, BodyModelType] = {
     "smpl": "smpl",
@@ -39,7 +40,8 @@ class InputConfig:
 
 
 @dataclass
-class VirtualCameraConfig:
+class RenderingConfig:
+    mode: RenderingMode = "auto"
     count: int = 24
     width: int = 1280
     height: int = 720
@@ -50,6 +52,9 @@ class VirtualCameraConfig:
     render_masks: bool = True
     background_color: tuple[float, float, float] = (0.0, 1.0, 0.0)
     output_dir: Path = Path("data/rendered")
+
+
+VirtualCameraConfig = RenderingConfig
 
 
 @dataclass
@@ -97,9 +102,11 @@ class BodyModelConfig:
 DEFAULT_LOSS_WEIGHTS: dict[str, float] = {
     "pose_obj": 1.0e5,  # 3D keypoint term
     "pose_pr": 1.0,     # body_pose_prior (anti-hyperextension barriers)
+    "spine_pose": 25.0, # extra L2 on spine1/spine2/spine3 to reduce torso bending
+    "neck_pose": 25.0,  # extra L2 on neck/head to reduce face-keypoint overfitting
     "betas": 1.0,       # shape regulariser
-    "lhand": 0.1,       # left-hand pose prior (off by default in the stages)
-    "rhand": 0.1,       # right-hand pose prior
+    "lhand": 0.1,       # left-hand pose prior for hand stages
+    "rhand": 0.1,       # right-hand pose prior for hand stages
     "jaw": 1.0,         # jaw regulariser
     "f_exp": 0.01,      # expression regulariser
     "limb": 1.0e4,      # limb-length term (mesh path)
@@ -141,6 +148,24 @@ class ConversionConfig:
 @dataclass
 class ViewerConfig:
     enabled: bool = False
+    remote: str | None = None
+    update_interval: int = 25
+    timeout: float = 10.0
+    log_path: Path | None = None
+    window_type: str | None = None
+    camera_overlay: bool = False
+    camera_json: Path | None = None
+    image_root: Path | None = None
+    cameras: str | None = None
+    max_cameras: int = 4
+    calibration_scale: float | None = None
+    initial_camera: str = "auto"
+    billboard_distance: float = 2.0
+    billboard_alpha: float = 0.55
+    image_extensions: tuple[str, ...] = (".png", ".jpg", ".jpeg")
+    shadows: bool = False
+    znear: float = 0.05
+    zfar: float = 50.0
 
 
 @dataclass
@@ -150,8 +175,12 @@ class PipelineConfig:
     fitting: FittingConfig = field(default_factory=FittingConfig)
     keypoints: KeypointConfig = field(default_factory=KeypointConfig)
     conversion: ConversionConfig = field(default_factory=ConversionConfig)
-    virtual_cameras: VirtualCameraConfig | None = None
+    rendering: RenderingConfig | None = None
     viewer: ViewerConfig = field(default_factory=ViewerConfig)
+
+    @property
+    def virtual_cameras(self) -> RenderingConfig | None:
+        return self.rendering
 
 
 def _as_path(value: Any) -> Path | None:
@@ -238,18 +267,62 @@ def _input_config(data: dict[str, Any] | None) -> InputConfig:
     )
 
 
-def _virtual_camera_config(
+def _rendering_config(
     data: dict[str, Any] | None,
     input_config: InputConfig,
-) -> VirtualCameraConfig | None:
+) -> RenderingConfig | None:
     data = data or {}
+    if "rendering" in data and isinstance(data["rendering"], dict):
+        data = data["rendering"]
+    mode = str(data.get("mode", "auto")).lower().strip()
+    mode_aliases = {
+        "calibrated": "real",
+        "calibration": "real",
+        "camera": "real",
+        "cameras": "real",
+        "heuristic": "virtual",
+        "semi_sphere": "virtual",
+        "semi-sphere": "virtual",
+    }
+    mode = mode_aliases.get(mode, mode)
+    if mode not in {"auto", "real", "virtual"}:
+        raise ValueError("rendering.mode must be one of: auto, real, virtual.")
     output_dir = data.get("output_dir") or input_config.root / "rendered"
     data = {
         **data,
+        "mode": mode,
         "output_dir": Path(output_dir),
         "background_color": _parse_rgb_color(data.get("background_color", "green")),
     }
-    return VirtualCameraConfig(**data)
+    return RenderingConfig(**data)
+
+
+def _load_yaml_mapping(path: Path) -> dict[str, Any]:
+    try:
+        import yaml
+    except ImportError as exc:
+        raise RuntimeError(
+            "Loading YAML configs requires PyYAML. Install the package with project "
+            "dependencies before running the CLI."
+        ) from exc
+
+    with open(path, "r", encoding="utf-8") as handle:
+        data = yaml.safe_load(handle) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"Config {path} must contain a YAML mapping.")
+    return data
+
+
+def _merged_rendering_data(data: dict[str, Any], config_path: Path) -> dict[str, Any] | None:
+    sidecar = config_path.parent / "rendering.yaml"
+    sidecar_data = _load_yaml_mapping(sidecar) if sidecar.exists() else {}
+    if "rendering" in sidecar_data and isinstance(sidecar_data["rendering"], dict):
+        sidecar_data = sidecar_data["rendering"]
+    legacy_data = data.get("virtual_cameras") or {}
+    rendering_data = data.get("rendering") or {}
+    if not isinstance(legacy_data, dict) or not isinstance(rendering_data, dict):
+        raise ValueError("rendering and virtual_cameras configs must be YAML mappings.")
+    return {**sidecar_data, **legacy_data, **rendering_data}
 
 
 def _parse_rgb_color(value: Any) -> tuple[float, float, float]:
@@ -379,20 +452,51 @@ def _conversion_config(data: dict[str, Any] | None) -> ConversionConfig:
 
 def _viewer_config(data: dict[str, Any] | None) -> ViewerConfig:
     data = data or {}
-    return ViewerConfig(enabled=data.get("enabled", False))
+    if "viewer" in data and isinstance(data["viewer"], dict):
+        data = data["viewer"]
+    calibration_scale = data.get("calibration_scale", data.get("camera_scale"))
+    image_extensions = data.get("image_extensions", (".png", ".jpg", ".jpeg"))
+    if image_extensions is None:
+        image_extensions = (".png", ".jpg", ".jpeg")
+    if isinstance(image_extensions, str):
+        image_extensions = tuple(
+            item.strip() for item in image_extensions.split(",") if item.strip()
+        )
+    else:
+        image_extensions = tuple(str(item) for item in image_extensions)
+    return ViewerConfig(
+        enabled=bool(data.get("enabled", False)),
+        remote=data.get("remote"),
+        update_interval=int(data.get("update_interval", 25)),
+        timeout=float(data.get("timeout", 10.0)),
+        log_path=_as_path(data.get("log_path", data.get("log"))),
+        window_type=data.get("window_type"),
+        camera_overlay=bool(data.get("camera_overlay", data.get("overlay", False))),
+        camera_json=_as_path(data.get("camera_json")),
+        image_root=_as_path(data.get("image_root")),
+        cameras=data.get("cameras"),
+        max_cameras=int(data.get("max_cameras", 4)),
+        calibration_scale=(
+            None if calibration_scale is None else float(calibration_scale)
+        ),
+        initial_camera=str(data.get("initial_camera", "auto")),
+        billboard_distance=float(data.get("billboard_distance", 2.0)),
+        billboard_alpha=float(data.get("billboard_alpha", 0.55)),
+        image_extensions=image_extensions,
+        shadows=bool(data.get("shadows", False)),
+        znear=float(data.get("znear", 0.05)),
+        zfar=float(data.get("zfar", 50.0)),
+    )
+
+
+def load_viewer_config(path: str | Path) -> ViewerConfig:
+    data = _load_yaml_mapping(Path(path))
+    return _viewer_config(data)
 
 
 def load_config(path: str | Path) -> PipelineConfig:
-    try:
-        import yaml
-    except ImportError as exc:
-        raise RuntimeError(
-            "Loading YAML configs requires PyYAML. Install the package with project "
-            "dependencies before running the CLI."
-        ) from exc
-
-    with open(path, "r", encoding="utf-8") as handle:
-        data = yaml.safe_load(handle)
+    path = Path(path)
+    data = _load_yaml_mapping(path)
 
     input_config = _input_config(data.get("input"))
     body_model_config = _body_model_config(data["body_model"])
@@ -404,7 +508,7 @@ def load_config(path: str | Path) -> PipelineConfig:
         body_model_config.betas_path = input_config.body_shape
     return PipelineConfig(
         input=input_config,
-        virtual_cameras=_virtual_camera_config(data.get("virtual_cameras"), input_config),
+        rendering=_rendering_config(_merged_rendering_data(data, path), input_config),
         keypoints=_keypoint_config(data.get("keypoints"), input_config),
         body_model=body_model_config,
         fitting=_fitting_config(data.get("fitting"), input_config),

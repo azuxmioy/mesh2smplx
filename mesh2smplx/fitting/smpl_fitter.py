@@ -16,9 +16,12 @@ from mesh2smplx.core.config import BodyModelConfig, FittingConfig
 from .joints import JointMapper, smpl_to_openpose
 from .losses import (
     body_pose_prior,
+    hand_pose_prior,
     keypoint_objective,
     loss_weights,
+    neck_pose_prior,
     original_joint_weights,
+    spine_pose_prior,
 )
 from .mesh_losses import MeshTarget, symmetric_chamfer_loss
 from .schedule import (
@@ -285,6 +288,7 @@ class SmplFitter:
                 optimizer.zero_grad(set_to_none=True)
                 output = body_model(return_verts=stage.use_mesh_loss)
                 loss_dict = self._full_loss_dict(
+                    body_model=body_model,
                     output=output,
                     keypoints_3d=keypoints_3d,
                     stage=stage,
@@ -477,6 +481,7 @@ class SmplFitter:
 
     def _full_loss_dict(
         self,
+        body_model: Any,
         output: Any,
         keypoints_3d: torch.Tensor,
         stage: FitStage,
@@ -509,6 +514,46 @@ class SmplFitter:
 
         if stage.use_pose_prior and hasattr(output, "body_pose"):
             losses["pose_pr"] = weight["pose_pr"](body_pose_prior(output.body_pose), stage_iteration)
+            if self.fitting_config.loss_weights.get("spine_pose", 0.0) > 0.0:
+                losses["spine_pose"] = weight["spine_pose"](
+                    spine_pose_prior(output.body_pose), stage_iteration
+                )
+            if self.fitting_config.loss_weights.get("neck_pose", 0.0) > 0.0:
+                losses["neck_pose"] = weight["neck_pose"](
+                    neck_pose_prior(output.body_pose), stage_iteration
+                )
+
+        if (
+            "left_hand_pose" in stage.optimize
+            and self.fitting_config.loss_weights.get("lhand", 0.0) > 0.0
+        ):
+            left_hand_pose = self._hand_axis_angle_pose(body_model, "left")
+            if left_hand_pose is not None:
+                losses["lhand"] = weight["lhand"](hand_pose_prior(left_hand_pose), stage_iteration)
+
+        if (
+            "right_hand_pose" in stage.optimize
+            and self.fitting_config.loss_weights.get("rhand", 0.0) > 0.0
+        ):
+            right_hand_pose = self._hand_axis_angle_pose(body_model, "right")
+            if right_hand_pose is not None:
+                losses["rhand"] = weight["rhand"](hand_pose_prior(right_hand_pose), stage_iteration)
+
+        if (
+            "jaw_pose" in stage.optimize
+            and self.fitting_config.loss_weights.get("jaw", 0.0) > 0.0
+        ):
+            jaw_pose = self._model_or_output_tensor(body_model, output, "jaw_pose")
+            if jaw_pose is not None:
+                losses["jaw"] = weight["jaw"](jaw_pose.square().sum(), stage_iteration)
+
+        if (
+            "expression" in stage.optimize
+            and self.fitting_config.loss_weights.get("f_exp", 0.0) > 0.0
+        ):
+            expression = self._model_or_output_tensor(body_model, output, "expression")
+            if expression is not None:
+                losses["f_exp"] = weight["f_exp"](expression.square().sum(), stage_iteration)
 
         if stage.use_shape_prior and hasattr(output, "betas") and not self._betas_calibrated:
             losses["betas"] = weight["betas"](output.betas.square().mean(), stage_iteration)
@@ -526,6 +571,26 @@ class SmplFitter:
             losses["limb"] = weight["limb"]((observed - predicted).square().mean(), stage_iteration)
 
         return losses
+
+    @staticmethod
+    def _model_or_output_tensor(body_model: Any, output: Any, name: str) -> torch.Tensor | None:
+        tensor = getattr(body_model, name, None)
+        if tensor is None:
+            tensor = getattr(output, name, None)
+        return tensor if tensor is not None else None
+
+    @staticmethod
+    def _hand_axis_angle_pose(body_model: Any, side: str) -> torch.Tensor | None:
+        pose_name = f"{side}_hand_pose"
+        pose = getattr(body_model, pose_name, None)
+        if pose is None:
+            return None
+        if pose.shape[-1] == 45:
+            return pose
+        components = getattr(body_model, f"{side}_hand_components", None)
+        if components is None:
+            return None
+        return torch.einsum("bi,ij->bj", pose, components)
 
     @staticmethod
     def _stage_joint_indices(
