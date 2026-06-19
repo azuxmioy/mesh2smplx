@@ -62,6 +62,7 @@ FitProgressCallback = Callable[[SmplFitProgress], None]
 
 
 ROOT_ORIENTATION_JOINTS = (1, 2, 5, 8, 9, 12)
+LOWER_ARM_BODY_POSE_START = 15 * 3
 
 
 @dataclass
@@ -205,7 +206,7 @@ class SmplFitter:
         else:
             self._initialize_root_orientation_from_keypoints(body_model, keypoints_3d)
             self._initialize_translation_from_keypoints(body_model, keypoints_3d)
-        schedule = schedule or legacy_schedule(self.body_config.type)
+        schedule = self._resolve_schedule(schedule)
         target_points = self._stack_target_points(mesh_targets, len(keypoints_3d), device)
         stage_step_limits = self._stage_step_limits(schedule, max_steps_per_stage, max_total_steps)
 
@@ -237,7 +238,7 @@ class SmplFitter:
         device = torch.device(self.fitting_config.device)
         keypoints_3d = keypoints_3d.to(device=device, dtype=torch.float32)
         body_model = self.create_body_model(batch_size=1)
-        schedule = schedule or legacy_schedule(self.body_config.type)
+        schedule = self._resolve_schedule(schedule)
         stage_step_limits = self._stage_step_limits(schedule, max_steps_per_stage, max_total_steps)
 
         results: list[SmplFitResult] = []
@@ -274,7 +275,12 @@ class SmplFitter:
         for stage, stage_steps in zip(schedule, stage_step_limits):
             if stage_steps <= 0:
                 continue
-            opt_params = self._params_for_stage(body_model, stage)
+            lower_arm_pose = self._lower_arm_stage_parameter(body_model, stage)
+            opt_params = (
+                [lower_arm_pose]
+                if lower_arm_pose is not None
+                else self._params_for_stage(body_model, stage)
+            )
             if self._betas_calibrated:
                 opt_params = [p for p in opt_params if p is not getattr(body_model, "betas", None)]
             if not opt_params:
@@ -286,7 +292,11 @@ class SmplFitter:
             for stage_step in range(stage_steps):
                 step += 1
                 optimizer.zero_grad(set_to_none=True)
-                output = body_model(return_verts=stage.use_mesh_loss)
+                output = self._forward_stage_body_model(
+                    body_model,
+                    return_verts=stage.use_mesh_loss,
+                    lower_arm_pose=lower_arm_pose,
+                )
                 loss_dict = self._full_loss_dict(
                     body_model=body_model,
                     output=output,
@@ -314,7 +324,11 @@ class SmplFitter:
                     step, total_steps, callback_interval
                 ):
                     with torch.no_grad():
-                        snapshot = body_model(return_verts=True)
+                        snapshot = self._forward_stage_body_model(
+                            body_model,
+                            return_verts=True,
+                            lower_arm_pose=lower_arm_pose,
+                        )
                         progress_callback(
                             SmplFitProgress(
                                 step=step,
@@ -327,6 +341,8 @@ class SmplFitter:
                                 faces=body_model.faces,
                             )
                         )
+            if lower_arm_pose is not None:
+                self._commit_lower_arm_stage(body_model, lower_arm_pose)
         return last_loss
 
     def _extract_result(self, body_model, last_loss: float | None) -> SmplFitResult:
@@ -342,6 +358,19 @@ class SmplFitter:
                 faces=body_model.faces,
                 loss=last_loss,
             )
+
+    def _resolve_schedule(self, schedule: list[FitStage] | None) -> list[FitStage]:
+        stages = list(
+            schedule
+            if schedule is not None
+            else legacy_schedule(
+                self.body_config.type,
+                refine_lower_arms=self.fitting_config.refine_lower_arms,
+            )
+        )
+        if self._betas_calibrated:
+            stages = [stage for stage in stages if stage.name != "shape"]
+        return stages
 
     @staticmethod
     def _keypoint_confidence(keypoints_3d: torch.Tensor) -> torch.Tensor:
@@ -648,6 +677,38 @@ class SmplFitter:
             if hasattr(body_model, name):
                 params.append(getattr(body_model, name))
         return params
+
+    @staticmethod
+    def _lower_arm_stage_parameter(body_model: Any, stage: FitStage) -> torch.nn.Parameter | None:
+        if stage.name != "lower_arms" or not hasattr(body_model, "body_pose"):
+            return None
+        body_pose = body_model.body_pose
+        if body_pose.shape[1] <= LOWER_ARM_BODY_POSE_START:
+            return None
+        return torch.nn.Parameter(body_pose[:, LOWER_ARM_BODY_POSE_START:].detach().clone())
+
+    @staticmethod
+    def _forward_stage_body_model(
+        body_model: Any,
+        *,
+        return_verts: bool,
+        lower_arm_pose: torch.Tensor | None = None,
+    ):
+        if lower_arm_pose is None:
+            return body_model(return_verts=return_verts)
+        body_pose = torch.cat(
+            [
+                body_model.body_pose[:, :LOWER_ARM_BODY_POSE_START].detach(),
+                lower_arm_pose,
+            ],
+            dim=1,
+        )
+        return body_model(return_verts=return_verts, body_pose=body_pose)
+
+    @staticmethod
+    def _commit_lower_arm_stage(body_model: Any, lower_arm_pose: torch.Tensor) -> None:
+        with torch.no_grad():
+            body_model.body_pose[:, LOWER_ARM_BODY_POSE_START:].copy_(lower_arm_pose.detach())
 
     @staticmethod
     def _stack_target_points(

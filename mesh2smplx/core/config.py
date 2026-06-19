@@ -127,6 +127,9 @@ class FittingConfig:
     # Tracking: when fitting multiple frames, warm-start each frame from the
     # previous fit (and skip the keypoint-based root/translation init).
     tracking: bool = True
+    # Hand fitting first rotates the lower-arm body-pose slice using wrist/hand
+    # keypoints only. This avoids changing the full body pose during hand stages.
+    refine_lower_arms: bool = True
 
 
 @dataclass
@@ -427,6 +430,7 @@ def _fitting_config(data: dict[str, Any] | None, input_config: InputConfig) -> F
         ),
         loss_weights={key: float(value) for key, value in loss_weights.items()},
         tracking=bool(data.get("tracking", True)),
+        refine_lower_arms=bool(data.get("refine_lower_arms", True)),
     )
 
 

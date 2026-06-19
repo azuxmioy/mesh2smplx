@@ -39,6 +39,7 @@ fitting:
   body_vertex_samples: 2000
   max_total_steps: 2400
   tracking: true
+  refine_lower_arms: true
   loss_weights:
     pose_obj: 1.0e3
     pose_pr: 1.0

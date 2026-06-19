@@ -66,7 +66,7 @@ BODY25_PARTS = (
 )
 
 
-def legacy_schedule(model_type: str, refine_lower_arms: bool = False) -> list[FitStage]:
+def legacy_schedule(model_type: str, refine_lower_arms: bool = True) -> list[FitStage]:
     """Return the original high-level optimization schedule for a model type."""
     if model_type == "smpl":
         return [
@@ -77,13 +77,16 @@ def legacy_schedule(model_type: str, refine_lower_arms: bool = False) -> list[Fi
         ]
 
     if model_type == "smplh":
-        return [
+        stages = [
             FitStage("pose_only", 35, 30, ("transl", "global_orient", "body_pose"), BODY25, False, True, False, False, 0.05, True),
             FitStage("pose_shape", 5, 30, ("transl", "global_orient", "body_pose", "betas"), BODY_CONTOUR, True, True, True, False, 0.02),
             FitStage("shape", 3, 30, ("transl", "global_orient", "body_pose", "betas"), None, True, True, True, True, 0.02),
             FitStage("body_pose", 5, 30, ("body_pose",), None, True, True, False, False, 0.02),
-            FitStage("hands", 3, 30, ("left_hand_pose", "right_hand_pose"), HANDS, False, False, False, False, 0.05),
         ]
+        if refine_lower_arms:
+            stages.append(FitStage("lower_arms", 5, 30, ("body_pose",), LOWER_ARMS_AND_HANDS, False, False, False, False, 0.05))
+        stages.append(FitStage("hands", 3, 30, ("left_hand_pose", "right_hand_pose"), HANDS, False, False, False, False, 0.05))
+        return stages
 
     if model_type == "smplx":
         stages = [
