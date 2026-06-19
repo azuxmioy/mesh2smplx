@@ -66,23 +66,30 @@ BODY25_PARTS = (
 )
 
 
-def legacy_schedule(model_type: str, refine_lower_arms: bool = True) -> list[FitStage]:
+def legacy_schedule(
+    model_type: str,
+    refine_lower_arms: bool = True,
+    optimize_shape: bool = True,
+) -> list[FitStage]:
     """Return the original high-level optimization schedule for a model type."""
     if model_type == "smpl":
-        return [
+        stages = [
             FitStage("pose_only", 35, 30, ("transl", "global_orient", "body_pose"), BODY25, False, True, False, False, 0.05, True),
             FitStage("pose_shape", 5, 30, ("transl", "global_orient", "body_pose", "betas"), BODY_CONTOUR, True, True, True, False, 0.02),
-            FitStage("shape", 3, 30, ("transl", "global_orient", "body_pose", "betas"), None, True, True, True, True, 0.02),
-            FitStage("body_pose", 5, 30, ("body_pose",), None, True, True, False, False, 0.02),
         ]
+        if optimize_shape:
+            stages.append(FitStage("shape", 3, 30, ("transl", "global_orient", "body_pose", "betas"), None, True, True, True, True, 0.02))
+        stages.append(FitStage("body_pose", 5, 30, ("body_pose",), None, True, True, False, False, 0.02))
+        return stages
 
     if model_type == "smplh":
         stages = [
             FitStage("pose_only", 35, 30, ("transl", "global_orient", "body_pose"), BODY25, False, True, False, False, 0.05, True),
             FitStage("pose_shape", 5, 30, ("transl", "global_orient", "body_pose", "betas"), BODY_CONTOUR, True, True, True, False, 0.02),
-            FitStage("shape", 3, 30, ("transl", "global_orient", "body_pose", "betas"), None, True, True, True, True, 0.02),
-            FitStage("body_pose", 5, 30, ("body_pose",), None, True, True, False, False, 0.02),
         ]
+        if optimize_shape:
+            stages.append(FitStage("shape", 3, 30, ("transl", "global_orient", "body_pose", "betas"), None, True, True, True, True, 0.02))
+        stages.append(FitStage("body_pose", 5, 30, ("body_pose",), None, True, True, False, False, 0.02))
         if refine_lower_arms:
             stages.append(FitStage("lower_arms", 5, 30, ("body_pose",), LOWER_ARMS_AND_HANDS, False, False, False, False, 0.05))
         stages.append(FitStage("hands", 3, 30, ("left_hand_pose", "right_hand_pose"), HANDS, False, False, False, False, 0.05))
@@ -92,23 +99,21 @@ def legacy_schedule(model_type: str, refine_lower_arms: bool = True) -> list[Fit
         stages = [
             FitStage("pose_only", 20, 30, ("transl", "global_orient", "body_pose"), BODY25, False, True, False, False, 0.05, True),
             FitStage("pose_shape", 5, 30, ("transl", "global_orient", "body_pose", "betas"), BODY_CONTOUR, True, True, True, False, 0.02),
-            FitStage("shape", 5, 30, ("transl", "global_orient", "body_pose", "betas"), None, True, True, True, True, 0.02),
-            FitStage("body_pose", 10, 30, ("body_pose",), None, True, True, False, False, 0.02),
         ]
+        if optimize_shape:
+            stages.append(FitStage("shape", 5, 30, ("transl", "global_orient", "body_pose", "betas"), None, True, True, True, True, 0.02))
+        stages.append(FitStage("body_pose", 10, 30, ("body_pose",), None, True, True, False, False, 0.02))
+        if refine_lower_arms:
+            stages.append(FitStage("lower_arms", 5, 30, ("body_pose",), LOWER_ARMS_AND_HANDS, False, False, False, False, 0.05))
+        stages.append(FitStage("hands", 10, 30, ("left_hand_pose", "right_hand_pose"), HANDS, False, False, False, False, 0.01))
+        if optimize_shape:
+            stages.append(FitStage("shape", 5, 30, ("transl", "global_orient", "body_pose", "betas"), None, True, True, True, True, 0.02))
+        stages.append(FitStage("body_pose", 10, 30, ("body_pose",), None, True, True, False, False, 0.02))
         if refine_lower_arms:
             stages.append(FitStage("lower_arms", 5, 30, ("body_pose",), LOWER_ARMS_AND_HANDS, False, False, False, False, 0.05))
         stages.extend(
             [
-                FitStage("hands", 10, 30, ("left_hand_pose", "right_hand_pose"), HANDS, False, False, False, False, 0.05),
-                FitStage("shape", 5, 30, ("transl", "global_orient", "body_pose", "betas"), None, True, True, True, True, 0.02),
-                FitStage("body_pose", 10, 30, ("body_pose",), None, True, True, False, False, 0.02),
-            ]
-        )
-        if refine_lower_arms:
-            stages.append(FitStage("lower_arms", 5, 30, ("body_pose",), LOWER_ARMS_AND_HANDS, False, False, False, False, 0.05))
-        stages.extend(
-            [
-                FitStage("hands", 10, 30, ("left_hand_pose", "right_hand_pose"), HANDS, False, False, False, False, 0.05),
+                FitStage("hands", 10, 30, ("left_hand_pose", "right_hand_pose"), HANDS, False, False, False, False, 0.01),
                 FitStage(
                     "face",
                     5,

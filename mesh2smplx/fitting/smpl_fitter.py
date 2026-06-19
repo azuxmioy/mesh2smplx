@@ -136,9 +136,9 @@ class SmplFitter:
                 {
                     "create_left_hand_pose": use_hands,
                     "create_right_hand_pose": use_hands,
-                    "use_pca": True,
+                    "use_pca": self.body_config.use_pca,
                     "num_pca_comps": self.body_config.num_pca_comps,
-                    "flat_hand_mean": True,
+                    "flat_hand_mean": self.body_config.flat_hand_mean,
                 }
             )
         if model_type == "smplx":
@@ -366,10 +366,9 @@ class SmplFitter:
             else legacy_schedule(
                 self.body_config.type,
                 refine_lower_arms=self.fitting_config.refine_lower_arms,
+                optimize_shape=not self._betas_calibrated,
             )
         )
-        if self._betas_calibrated:
-            stages = [stage for stage in stages if stage.name != "shape"]
         return stages
 
     @staticmethod

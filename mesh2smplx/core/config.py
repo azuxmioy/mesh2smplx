@@ -88,6 +88,8 @@ class BodyModelConfig:
     model_path: Path = Path("body_models")
     use_hands: bool = True
     use_face: bool = True
+    use_pca: bool = True
+    flat_hand_mean: bool = True
     num_betas: int = 10
     num_expression_coeffs: int = 10
     num_pca_comps: int = 12
@@ -405,6 +407,8 @@ def _body_model_config(data: dict[str, Any]) -> BodyModelConfig:
         model_path=Path(data.get("model_path", "body_models")),
         use_hands=data.get("use_hands", True),
         use_face=data.get("use_face", True),
+        use_pca=bool(data.get("use_pca", True)),
+        flat_hand_mean=bool(data.get("flat_hand_mean", True)),
         num_betas=data.get("num_betas", 10),
         num_expression_coeffs=data.get("num_expression_coeffs", 10),
         num_pca_comps=data.get("num_pca_comps", 12),

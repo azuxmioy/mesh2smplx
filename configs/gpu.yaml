@@ -28,6 +28,8 @@ body_model:
   model_path: body_models
   use_hands: true
   use_face: true
+  use_pca: true
+  flat_hand_mean: true
   num_betas: 10
   num_expression_coeffs: 10
   num_pca_comps: 12
@@ -37,7 +39,7 @@ fitting:
   output_dir: data
   scan_surface_samples: 2000
   body_vertex_samples: 2000
-  max_total_steps: 2400
+  max_total_steps: 1600
   tracking: true
   refine_lower_arms: true
   loss_weights:
@@ -46,6 +48,8 @@ fitting:
     spine_pose: 50.0
     neck_pose: 50.0
     betas: 1.0
+    lhand: 5.0
+    rhand: 5.0
     jaw: 1.0
     f_exp: 0.01
     limb: 1.0e4
