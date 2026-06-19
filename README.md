@@ -1,10 +1,8 @@
 # mesh2smplx
 
 <p align="center">
-  <video src="./teaser.mp4" controls muted loop width="100%"></video>
+  <img src="./teaser.gif" alt="mesh2smplx AITviewer fitting teaser" width="100%">
 </p>
-
-[Open the teaser video](./teaser.mp4)
 
 This codebase is for registering SMPL-X to a
 sequence of 3D meshes. It can use real camera images, or render images from the
