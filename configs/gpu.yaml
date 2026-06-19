@@ -24,7 +24,7 @@ keypoints:
 
 body_model:
   type: smplx
-  gender: neutral
+  gender: female
   model_path: body_models
   use_hands: true
   use_face: true
@@ -42,8 +42,8 @@ fitting:
   loss_weights:
     pose_obj: 1.0e3
     pose_pr: 1.0
-    spine_pose: 25.0
-    neck_pose: 25.0
+    spine_pose: 50.0
+    neck_pose: 50.0
     betas: 1.0
     jaw: 1.0
     f_exp: 0.01

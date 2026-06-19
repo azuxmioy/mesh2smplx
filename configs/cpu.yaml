@@ -40,7 +40,7 @@ fitting:
   max_total_steps: 2400
   tracking: true
   loss_weights:
-    pose_obj: 1.0e2
+    pose_obj: 1.0e3
     pose_pr: 1.0
     spine_pose: 50.0
     neck_pose: 50.0

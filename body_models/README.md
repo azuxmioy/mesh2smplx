@@ -31,12 +31,15 @@ body_models/
     smpl2smplx_deftrafo_setup.pkl
 ```
 
-You only need the model type and gender selected in your config. The GPU config
-fits neutral SMPL-X by default, so the minimal default setup is:
+You only need the model type and gender selected in your config. The example
+demo configs use female SMPL-X by default, so the minimal default setup is:
 
 ```text
-body_models/smplx/SMPLX_NEUTRAL.npz
+body_models/smplx/SMPLX_FEMALE.npz
 ```
+
+If you change `body_model.gender` to `neutral` or `male`, provide the matching
+`SMPLX_NEUTRAL.npz` or `SMPLX_MALE.npz` file instead.
 
 Download sources:
 
