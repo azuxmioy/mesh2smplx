@@ -136,7 +136,7 @@ warm-started from the previous result.
 Tracking and fixed body shape can be overridden from the launcher:
 
 ```bash
-scripts/run_gpu.sh configs/gpu.yaml --tracking false --betas data/body_shape.npy
+scripts/run_gpu.sh configs/gpu.yaml --tracking true --betas data/body_shape.npy
 ```
 
 For local AITviewer debugging, run:
