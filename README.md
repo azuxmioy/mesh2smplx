@@ -178,7 +178,7 @@ non-commercial research license terms and attribution intact.
 
 ## References
 
-Our implementation is based on [AITviewer](https://github.com/eth-ait/aitviewer), [Mesh Registration](https://github.com/bharat-b7/RVH_Mesh_Registration).
+Our implementation is based on [AITviewer](https://github.com/eth-ait/aitviewer), [Mesh Registration](https://github.com/bharat-b7/RVH_Mesh_Registration), [smplfitter](https://github.com/isarandi/smplfitter).
 
 If find this code useful in your research, please consider citing:
 
