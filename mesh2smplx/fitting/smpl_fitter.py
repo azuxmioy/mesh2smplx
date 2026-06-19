@@ -555,7 +555,7 @@ class SmplFitter:
             "left_hand_pose" in stage.optimize
             and self.fitting_config.loss_weights.get("lhand", 0.0) > 0.0
         ):
-            left_hand_pose = self._hand_axis_angle_pose(body_model, "left")
+            left_hand_pose = self._hand_prior_pose(body_model, "left")
             if left_hand_pose is not None:
                 losses["lhand"] = weight["lhand"](hand_pose_prior(left_hand_pose), stage_iteration)
 
@@ -563,7 +563,7 @@ class SmplFitter:
             "right_hand_pose" in stage.optimize
             and self.fitting_config.loss_weights.get("rhand", 0.0) > 0.0
         ):
-            right_hand_pose = self._hand_axis_angle_pose(body_model, "right")
+            right_hand_pose = self._hand_prior_pose(body_model, "right")
             if right_hand_pose is not None:
                 losses["rhand"] = weight["rhand"](hand_pose_prior(right_hand_pose), stage_iteration)
 
@@ -619,6 +619,18 @@ class SmplFitter:
         if components is None:
             return None
         return torch.einsum("bi,ij->bj", pose, components)
+
+    @classmethod
+    def _hand_prior_pose(cls, body_model: Any, side: str) -> torch.Tensor | None:
+        pose = cls._hand_axis_angle_pose(body_model, side)
+        if pose is None:
+            return None
+        mean = getattr(body_model, f"{side}_hand_mean", None)
+        if mean is not None:
+            pose = pose + mean.reshape(1, -1).to(device=pose.device, dtype=pose.dtype)
+        if side == "right":
+            pose = -pose
+        return pose
 
     @staticmethod
     def _stage_joint_indices(
