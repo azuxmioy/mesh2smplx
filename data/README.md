@@ -10,14 +10,22 @@ Download the example data archive from Hugging Face and extract it from the
 repository root:
 
 ```bash
-hf download hohs/mesh2smplx-example-data mesh2smplx_example_data.tar.gz \
-  --repo-type dataset \
-  --local-dir .
-tar -xzf mesh2smplx_example_data.tar.gz
+scripts/download_example_data.sh
 ```
 
-The archive extracts to `data/` and contains a small textured mesh sequence,
-camera calibration, and optional fixed body-shape betas.
+The script downloads `mesh2smplx_example_data.zip` from
+<https://huggingface.co/datasets/hohs/mesh2smplx> and extracts it to `data/`.
+The archive contains a small textured mesh sequence, camera calibration, and
+optional fixed body-shape betas.
+
+If you prefer to download manually:
+
+```bash
+hf download hohs/mesh2smplx mesh2smplx_example_data.zip \
+  --repo-type dataset \
+  --local-dir .
+unzip -o mesh2smplx_example_data.zip
+```
 
 ## Required Input
 

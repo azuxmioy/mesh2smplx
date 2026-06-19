@@ -36,11 +36,11 @@ calibration are optional depending on how 2D keypoints are produced.
 You can start from the example archive:
 
 ```bash
-hf download hohs/mesh2smplx-example-data mesh2smplx_example_data.tar.gz \
-  --repo-type dataset \
-  --local-dir .
-tar -xzf mesh2smplx_example_data.tar.gz
+scripts/download_example_data.sh
 ```
+
+This downloads `mesh2smplx_example_data.zip` from
+<https://huggingface.co/datasets/hohs/mesh2smplx> and extracts it to `data/`.
 
 ```text
 data/
