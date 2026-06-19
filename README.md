@@ -33,6 +33,15 @@ disabled when users only need part of the pipeline.
 Create one `data/` folder per sequence. Meshes are required; images and
 calibration are optional depending on how 2D keypoints are produced.
 
+You can start from the example archive:
+
+```bash
+hf download hohs/mesh2smplx-example-data mesh2smplx_example_data.tar.gz \
+  --repo-type dataset \
+  --local-dir .
+tar -xzf mesh2smplx_example_data.tar.gz
+```
+
 ```text
 data/
   meshes/                    # required: mesh sequence to fit
@@ -60,6 +69,9 @@ around the mesh center.
 
 If `body_shape.npy` is provided, the fitter uses those betas and does not
 optimize body shape.
+
+See [data/README.md](data/README.md) for the full data format and generated
+pipeline outputs.
 
 ### Self-Contained OpenPose-135 Checkpoints
 

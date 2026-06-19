@@ -13,7 +13,9 @@ env/
 
 # Generated capture outputs
 /outputs/
-/data/
+/data/*
+!/data/
+!/data/README.md
 /images/
 /crop_images/
 /masks/
